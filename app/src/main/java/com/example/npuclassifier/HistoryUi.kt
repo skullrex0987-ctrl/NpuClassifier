@@ -71,6 +71,7 @@ fun HistoryScreen(vm: SortViewModel, pad: PaddingValues) {
             dismissButton = { TextButton(onClick = { changeTarget = null }) { Text("Cancel") } }
         )
     }
+    if (showMissing) {
         AlertDialog(
             onDismissRequest = { showMissing = false },
             title = { Text("${missingIds.size} files are missing") },
