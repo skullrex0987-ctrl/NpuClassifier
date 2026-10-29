@@ -452,17 +452,13 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
     private fun redecide(cands: List<Candidate>? = null) {
         val cfg = settings.value
         val cats = categories.value
-        val candidates = cands ?: run {
-            // compute candidates for clip mode
-            if (cfg.model == "clip") {
-                // simplified: empty for now, will be populated on next scan
-                emptyList()
-            } else emptyList()
-        }
-        items.update { l ->
-            l.map {
-                if (it.status == Status.AUTO || it.status == Status.REVIEW)
-                    Decision.apply(it, cats, cfg, candidates) else it
+        viewModelScope.launch(Dispatchers.IO) {
+            val candidates = cands ?: if (cfg.model == "clip") engine.candidates(cfg, cats) else emptyList()
+            items.update { l ->
+                l.map {
+                    if (it.status == Status.AUTO || it.status == Status.REVIEW)
+                        Decision.apply(it, cats, cfg, candidates) else it
+                }
             }
         }
     }
