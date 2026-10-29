@@ -61,7 +61,7 @@ class SortEngine(private val ctx: Context) {
         }
     }
 
-    private fun CoroutineScope.worker(
+    private suspend fun CoroutineScope.worker(
         b: Backend,
         queue: ConcurrentLinkedQueue<MediaItem>,
         cfg: SortSettings,
