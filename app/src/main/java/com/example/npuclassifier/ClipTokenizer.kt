@@ -74,19 +74,19 @@ object ClipTokenizer {
 
         val bpeTokens = mutableListOf<String>()
         for (token in tokens) {
-            // bytes -> unicode chars
+            // bytes -> unicode chars (GPT-2 byte map)
             val bytes = token.toByteArray(Charsets.UTF_8)
             val chars = StringBuilder()
             for (b in bytes) {
                 chars.append(byteEncoder[(b.toInt() and 0xFF)] ?: '?')
             }
-            var word = chars.toString()
-            if (word.isNotEmpty()) {
-                // append </w> to last char
-                word = word.dropLast(1) + word.last() + "</w>"
-            }
-            // apply BPE
+            val word = chars.toString()
+            // Apply BPE to the unicode chars (without </w>)
             val pieces = bpe(word)
+            // Append </w> to the last piece
+            if (pieces.isNotEmpty()) {
+                pieces[pieces.size - 1] = pieces[pieces.size - 1] + "</w>"
+            }
             bpeTokens.addAll(pieces)
         }
 
@@ -109,8 +109,8 @@ object ClipTokenizer {
         return LongArray(MAXLEN) { result[it].toLong() }
     }
 
-    private fun bpe(word: String): List<String> {
-        if (word.isEmpty()) return emptyList()
+    private fun bpe(word: String): MutableList<String> {
+        if (word.isEmpty()) return mutableListOf()
         var wordChars = word.map { it.toString() }.toMutableList()
         // Apply merges
         while (wordChars.size > 1) {
