@@ -279,54 +279,110 @@ class SortEngine(private val ctx: Context) {
                 ScanController.update(ScanState(running = true, stage = stage, done = done, total = total, perSec = perSec, message = "$stage $done/$total"))
             }
         }
-        // Collect all pending ids first for total count
-        // Stage 1
+
+        val backends = (if (cfg.backends.isEmpty()) setOf(Backend.CPU) else cfg.backends)
+        val allowed = if (cfg.model == "clip") backends.filter { it == Backend.CPU || it == Backend.NPU }.toSet() else backends
+        val finalBackends = (if (allowed.isEmpty()) setOf(Backend.CPU) else allowed) + Backend.CPU
+
+        // ---------- Stage 1 ----------
         if (cfg.scanMode != "smart") {
             val stage = "fast"
-            var total = Repo.counts(ctx).pending + Repo.counts(ctx).needsSmart
-            if (total == 0) total = 1
+            var total = (Repo.counts(ctx).pending + Repo.counts(ctx).needsSmart).coerceAtLeast(1)
             var done = 0
-            val sink = mutableListOf<SortItem>()
-            fun flushSink() {
-                if (sink.isNotEmpty()) {
-                    Repo.saveResults(ctx, sink.toList())
-                    sink.clear()
-                }
-            }
-            while (true) {
-                val batch = Repo.nextPending(ctx, Status.PENDING, 50)
-                if (batch.isEmpty()) break
-                for (m in batch) {
-                    try {
-                        val si = processItem(m, cfg, cats, Backend.CPU)
-                        val status = if (cfg.scanMode == "fast") {
-                            if (si.status == Status.REVIEW) Status.REVIEW else si.status
-                        } else {
-                            if (si.status == Status.REVIEW) Status.NEEDS_SMART else si.status
+            val sink = ResultSink(ctx)
+            data class Decoded(val m: MediaItem, val bmp: Bitmap?, val err: String?)
+            val decoded = java.util.concurrent.ArrayBlockingQueue<Decoded>(16)
+            var producersDone = false
+
+            // 3 decoder threads
+            val decoderPool = java.util.concurrent.Executors.newFixedThreadPool(3)
+            val producerTasks = (1..3).map {
+                decoderPool.submit {
+                    while (true) {
+                        val batch = Repo.nextPending(ctx, Status.PENDING, 200)
+                        if (batch.isEmpty()) break
+                        for (m in batch) {
+                            val bmp = try { decode(m) } catch (e: Exception) { null }
+                            val err = if (bmp == null) "decode failed" else null
+                            decoded.put(Decoded(m, bmp, err))
                         }
-                        val item = si.copy(status = status)
-                        sink.add(item)
-                        val bmp = try { decode(m) } catch (e: Exception) { null }
-                        if (bmp != null) {
-                            Thumbs.save(ctx, m.id, bmp)
-                            bmp.recycle()
-                        }
-                        done++
-                        maybeUpdateState(done, total, stage)
-                        if (sink.size >= 100) flushSink()
-                    } catch (e: Exception) {
-                        AppLog.e("SortEngine", "stage1 failed ${m.name}", e)
-                        sink.add(SortItem(media = m, status = Status.ERROR, note = e.message ?: "error"))
                     }
                 }
-                flushSink()
             }
-            flushSink()
+            // mark producers done when all decoders finish
+            Thread {
+                for (t in producerTasks) t.get()
+                producersDone = true
+            }.apply { isDaemon = true; start() }
+
+            // per-backend workers
+            val workerThreads = mutableListOf<Thread>()
+            for (b in finalBackends) {
+                val t = Thread {
+                    var clf: Classifier? = null
+                    try {
+                        clf = try { Classifier(ctx, b) } catch (e: Exception) { AppLog.e("SortEngine", "backend $b failed to start", e); null }
+                        if (clf == null) return@Thread
+                        while (true) {
+                            val d = decoded.poll(1, java.util.concurrent.TimeUnit.SECONDS)
+                            if (d == null) {
+                                if (producersDone && decoded.isEmpty()) break
+                                continue
+                            }
+                            try {
+                                if (d.err != null || d.bmp == null) {
+                                    sink.add(SortItem(media = d.m, status = Status.ERROR, note = d.err ?: "decode failed"))
+                                } else {
+                                    val scores = clf.scores(d.bmp)
+                                    val order = scores.indices.sortedByDescending { scores[it] }.take(3)
+                                    val top = order.map { (clf.labels.getOrNull(it) ?: "class $it") to scores[it] }
+                                    val conf = top[0].second
+                                    val gap = conf - (top.getOrNull(1)?.second ?: 0f)
+                                    val emb = Emb.fromScores(scores)
+                                    val status = SortEngine.decide(conf, gap, cfg)
+                                    val itemStatus = if (cfg.scanMode == "fast") {
+                                        if (status == Status.REVIEW) Status.REVIEW else status
+                                    } else {
+                                        if (status == Status.REVIEW) Status.NEEDS_SMART else status
+                                    }
+                                    val thumbPath = Thumbs.save(ctx, d.m.id, d.bmp)
+                                    sink.add(SortItem(media = d.m, label = SortEngine.prettyLabel(top[0].first), conf = conf, gap = gap, top = top, status = itemStatus, backend = b, emb = emb, thumb = thumbPath))
+                                    done++
+                                    maybeUpdateState(done, total, stage)
+                                }
+                            } catch (e: Exception) {
+                                AppLog.e("SortEngine", "worker $b failed ${d.m.name}", e)
+                                sink.add(SortItem(media = d.m, status = Status.ERROR, note = e.message ?: "error"))
+                            } finally {
+                                d.bmp?.recycle()
+                            }
+                        }
+                    } finally {
+                        clf?.close()
+                    }
+                }
+                t.name = "worker-$b"
+                t.isDaemon = true
+                t.start()
+                workerThreads.add(t)
+            }
+            // if all backends failed to start, fallback CPU
+            if (workerThreads.isEmpty()) {
+                val t = Thread {
+                    // CPU fallback handled above; if empty, nothing
+                }
+            }
+
+            // wait for workers
+            for (t in workerThreads) t.join()
+            decoderPool.shutdown()
+            sink.close()
         } else {
             val d = Db.get(ctx)
             d.execSQL("UPDATE media SET status='NEEDS_SMART' WHERE status='PENDING'")
         }
-        // Stage 2
+
+        // ---------- Stage 2 (CLIP) ----------
         val smartEmbedder: Embedder? = when (cfg.model) {
             "clip" -> ClipEmbedder(ctx, Backend.CPU)
             else -> null
@@ -334,40 +390,67 @@ class SortEngine(private val ctx: Context) {
         try {
             val total = Repo.counts(ctx).needsSmart.coerceAtLeast(1)
             var done = 0
-            val sink = mutableListOf<SortItem>()
-            fun flushSink2() {
-                if (sink.isNotEmpty()) {
-                    Repo.saveResults(ctx, sink.toList())
-                    sink.clear()
-                }
-            }
-            while (true) {
-                val batch = Repo.nextPending(ctx, Status.NEEDS_SMART, 50)
-                if (batch.isEmpty()) break
-                for (m in batch) {
-                    try {
-                        val bmp = decode(m)
-                        val emb = smartEmbedder?.embedImage(bmp)
-                        val thumbPath = Thumbs.save(ctx, m.id, bmp)
-                        bmp.recycle()
-                        val si = SortItem(media = m, emb = emb, backend = Backend.CPU, thumb = thumbPath)
-                        val decided = Decision.apply(si, cats, cfg, engine.candidates(cfg, cats))
-                        val status = if (decided.status == Status.REVIEW) Status.REVIEW else decided.status
-                        sink.add(decided.copy(status = status))
-                        done++
-                        maybeUpdateState(done, total, "smart")
-                        if (sink.size >= 100) flushSink2()
-                    } catch (e: Exception) {
-                        AppLog.e("SortEngine", "stage2 failed ${m.name}", e)
-                        sink.add(SortItem(media = m, status = Status.ERROR, note = e.message ?: "error"))
+            val sink = ResultSink(ctx)
+            data class Decoded2(val m: MediaItem, val bmp: Bitmap?, val err: String?)
+            val decoded = java.util.concurrent.ArrayBlockingQueue<Decoded2>(16)
+            var producersDone = false
+            val decoderPool = java.util.concurrent.Executors.newFixedThreadPool(3)
+            val producerTasks = (1..3).map {
+                decoderPool.submit {
+                    while (true) {
+                        val batch = Repo.nextPending(ctx, Status.NEEDS_SMART, 200)
+                        if (batch.isEmpty()) break
+                        for (m in batch) {
+                            val bmp = try { decode(m) } catch (e: Exception) { null }
+                            decoded.put(Decoded2(m, bmp, if (bmp == null) "decode failed" else null))
+                        }
                     }
                 }
-                flushSink2()
             }
-            flushSink2()
+            Thread {
+                for (t in producerTasks) t.get()
+                producersDone = true
+            }.apply { isDaemon = true; start() }
+
+            val worker = Thread {
+                while (true) {
+                    val d = decoded.poll(1, java.util.concurrent.TimeUnit.SECONDS)
+                    if (d == null) {
+                        if (producersDone && decoded.isEmpty()) break
+                        continue
+                    }
+                    try {
+                        if (d.err != null || d.bmp == null) {
+                            sink.add(SortItem(media = d.m, status = Status.ERROR, note = d.err ?: "decode failed"))
+                        } else {
+                            val emb = smartEmbedder?.embedImage(d.bmp)
+                            val thumbPath = Thumbs.save(ctx, d.m.id, d.bmp)
+                            val si = SortItem(media = d.m, emb = emb, backend = Backend.CPU, thumb = thumbPath)
+                            val decided = Decision.apply(si, cats, cfg, engine.candidates(cfg, cats))
+                            val status = if (decided.status == Status.REVIEW) Status.REVIEW else decided.status
+                            sink.add(decided.copy(status = status))
+                            done++
+                            maybeUpdateState(done, total, "smart")
+                        }
+                    } catch (e: Exception) {
+                        AppLog.e("SortEngine", "stage2 failed ${d.m.name}", e)
+                        sink.add(SortItem(media = d.m, status = Status.ERROR, note = e.message ?: "error"))
+                    } finally {
+                        d.bmp?.recycle()
+                    }
+                }
+            }
+            worker.name = "clip-worker"
+            worker.isDaemon = true
+            worker.start()
+            worker.join()
+            decoderPool.shutdown()
+            sink.close()
         } finally {
             smartEmbedder?.close()
         }
+
         ScanController.update(ScanState(running = false, stage = "idle", message = "Done"))
     }
+
 }

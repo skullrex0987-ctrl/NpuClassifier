@@ -40,6 +40,8 @@ fun HistoryScreen(vm: SortViewModel, pad: PaddingValues) {
     val rows by vm.history.collectAsStateWithLifecycle()
     var showMissing by remember { mutableStateOf(false) }
     var missingIds by remember { mutableStateOf<List<Long>>(emptyList()) }
+    var changeTarget by remember { mutableStateOf<HistoryRow?>(null) }
+    var newLabel by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         vm.history.value = Repo.historyPage(vm.ctx, 0, 100)
@@ -50,7 +52,25 @@ fun HistoryScreen(vm: SortViewModel, pad: PaddingValues) {
         }
     }
 
-    if (showMissing) {
+    changeTarget?.let { r ->
+        AlertDialog(
+            onDismissRequest = { changeTarget = null },
+            title = { Text("Change category") },
+            text = {
+                Column {
+                    Text("Current: ${r.label}")
+                    androidx.compose.material3.OutlinedTextField(value = newLabel, onValueChange = { newLabel = it }, label = { Text("New category") })
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (newLabel.isNotBlank()) vm.changeCategory(r.id, newLabel.trim())
+                    changeTarget = null
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { changeTarget = null }) { Text("Cancel") } }
+        )
+    }
         AlertDialog(
             onDismissRequest = { showMissing = false },
             title = { Text("${missingIds.size} files are missing") },
@@ -82,6 +102,7 @@ fun HistoryScreen(vm: SortViewModel, pad: PaddingValues) {
                             } catch (e: Exception) { }
                         }) { Text("Open") }
                         TextButton(onClick = { vm.undoOne(r.id) }) { Text("Undo") }
+                        TextButton(onClick = { changeTarget = r; newLabel = r.label }) { Text("Change") }
                     }
                 }
             }

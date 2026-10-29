@@ -344,8 +344,14 @@ private fun ItemRow(si: SortItem) {
 
 @Composable
 private fun ReviewScreen(vm: SortViewModel, pad: PaddingValues) {
-    val list by vm.items.collectAsStateWithLifecycle()
-    val review = list.filter { it.status == Status.REVIEW }
+    val reviewItems = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<List<SortItem>>(emptyList()) }
+    val offset = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0) }
+    val loading = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        reviewItems.value = Repo.page(vm.ctx, Filter(statuses = setOf(Status.REVIEW)), 0, 100)
+        offset.value = reviewItems.value.size
+    }
+    val review = reviewItems.value
     LazyColumn(
         Modifier.fillMaxSize().padding(pad),
         contentPadding = PaddingValues(16.dp),
@@ -384,6 +390,16 @@ private fun ReviewScreen(vm: SortViewModel, pad: PaddingValues) {
                     }
                 }
             }
+        }
+        item {
+            TextButton(onClick = {
+                if (loading.value) return@TextButton
+                loading.value = true
+                val page = Repo.page(vm.ctx, Filter(statuses = setOf(Status.REVIEW)), offset.value, 100)
+                reviewItems.value = reviewItems.value + page
+                offset.value += page.size
+                loading.value = false
+            }) { Text(if (loading.value) "Loading..." else "Load more") }
         }
     }
 }
