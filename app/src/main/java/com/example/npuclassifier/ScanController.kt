@@ -10,17 +10,22 @@ data class ScanState(val running: Boolean = false, val stage: String = "idle", v
 object ScanController {
     private val _state = MutableStateFlow(ScanState())
     val state: StateFlow<ScanState> = _state
-    fun start(ctx: Context, cfg: SortSettings) { }
-    fun stop(ctx: Context) { }
+    var currentCfg: SortSettings = SortSettings()
+    fun start(ctx: Context, cfg: SortSettings) {
+        currentCfg = cfg
+        ScanService.ensureChannel(ctx)
+        val i = Intent(ctx, ScanService::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            ctx.startForegroundService(i)
+        } else {
+            ctx.startService(i)
+        }
+        _state.value = ScanState(running = true, stage = "fast", message = "Starting...")
+    }
+    fun stop(ctx: Context) {
+        ctx.stopService(Intent(ctx, ScanService::class.java))
+        _state.value = ScanState(running = false, stage = "idle", message = "Stopped")
+    }
     fun startIndex(ctx: Context, cfg: SortSettings) { }
-}
-
-class ScanService : android.app.Service() {
-    override fun onBind(intent: Intent?): android.os.IBinder? = null
-}
-
-object AppLog {
-    fun d(tag: String, msg: String) { }
-    fun e(tag: String, msg: String, t: Throwable? = null) { }
-    fun tail(n: Int): List<String> = emptyList()
+    fun update(s: ScanState) { _state.value = s }
 }

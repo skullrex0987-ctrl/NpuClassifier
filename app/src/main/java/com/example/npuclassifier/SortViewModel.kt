@@ -2,14 +2,11 @@ package com.example.npuclassifier
 
 import android.app.Application
 import android.content.Context
-import android.graphics.ImageDecoder
 import android.net.Uri
-import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -30,19 +27,23 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
     val categories = MutableStateFlow<List<Category>>(emptyList())
     val suggestions = MutableStateFlow<List<Cluster>>(emptyList())
     val speedText = MutableStateFlow("")
+    val history = MutableStateFlow<List<HistoryRow>>(emptyList())
 
     init {
         categories.value = CategoryStore.load(ctx)
+        viewModelScope.launch {
+            ScanController.state.collect { st ->
+                running.value = st.running
+                progress.value = st.done to st.total
+                st.message?.let { message.value = it }
+            }
+        }
     }
-
-    private var index = HashMap<Uri, Int>()
-    private var job: Job? = null
-    private val history = mutableListOf<Triple<Uri, Op, Status>>()
 
     fun updateSettings(f: (SortSettings) -> SortSettings) {
         settings.update(f)
         prefs.save(settings.value)
-        redecide()
+        viewModelScope.launch(Dispatchers.IO) { redecideRows() }
     }
 
     fun setModel(id: String) {
@@ -50,12 +51,10 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
             val cfg = settings.value.copy(model = id)
             settings.value = cfg
             prefs.save(cfg)
-            // clear results
-            items.update { l -> l.map { it.copy(status = Status.PENDING, emb = null, frameItems = null, label = "", conf = 0f, gap = 0f, top = emptyList(), source = "", note = "") } }
-            // ensure examples
+            Repo.resetForModelChange(ctx)
             categories.value = engine.ensureExamples(cfg, categories.value)
             CategoryStore.save(ctx, categories.value)
-            redecide()
+            redecideRows()
             message.value = "Model changed to $id"
         }
     }
@@ -73,13 +72,15 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
         val d = SortSettings()
         settings.value = d
         prefs.save(d)
-        redecide()
+        viewModelScope.launch(Dispatchers.IO) { redecideRows() }
         message.value = "Settings reset"
     }
 
     fun clearResults() {
-        items.update { l -> l.map { SortItem(media = it.media) } }
-        message.value = "Results cleared"
+        viewModelScope.launch(Dispatchers.IO) {
+            Repo.resetForModelChange(ctx)
+            message.value = "Results cleared"
+        }
     }
 
     fun clearExamples(category: String) {
@@ -90,7 +91,7 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
                 cur[idx] = cur[idx].copy(examples = emptyList())
                 categories.value = cur
                 CategoryStore.save(ctx, cur)
-                redecide()
+                redecideRows()
                 message.value = "Cleared examples for $category"
             }
         }
@@ -113,7 +114,6 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 ctx.contentResolver.openOutputStream(uri)?.use { os ->
                     os.write(CategoryStore.load(ctx).let { cats ->
-                        // serialize
                         val arr = org.json.JSONArray()
                         for (cat in cats) {
                             val o = org.json.JSONObject()
@@ -176,19 +176,18 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     Category(name, examples, prompt)
                 }
-                // Merge by name
                 val cur = categories.value.toMutableList()
                 for (imp in imported) {
                     val idx = cur.indexOfFirst { it.name == imp.name }
                     if (idx >= 0) {
-                        cur[idx] = imp // replace
+                        cur[idx] = imp
                     } else {
                         cur.add(imp)
                     }
                 }
                 categories.value = cur
                 CategoryStore.save(ctx, cur)
-                redecide()
+                redecideRows()
                 message.value = "Imported ${imported.size} categories"
             } catch (e: Exception) {
                 message.value = "Import failed: ${e.message}"
@@ -198,7 +197,7 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
 
     fun runSpeedTest() {
         viewModelScope.launch(Dispatchers.IO) {
-            val todo = items.value.take(20).map { it.media }
+            val todo = Repo.page(ctx, Filter(), 0, 20).map { it.media }.ifEmpty { items.value.take(20).map { it.media } }
             if (todo.isEmpty()) {
                 speedText.value = "No files to test"
                 return@launch
@@ -210,18 +209,13 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun setItems(ms: List<MediaItem>) {
-        index = HashMap<Uri, Int>().also { m -> ms.forEachIndexed { i, x -> m[x.uri] = i } }
-        items.value = ms.map { SortItem(media = it) }
-        history.clear()
-        canUndo.value = false
-        progress.value = 0 to ms.size
-    }
-
     fun loadUris(uris: List<Uri>) {
         viewModelScope.launch(Dispatchers.IO) {
-            setItems(uris.map { Media.fromUri(ctx, it) })
+            val batchId = System.currentTimeMillis()
+            val mediaItems = uris.map { Media.fromUri(ctx, it) }
+            Repo.upsertPending(ctx, mediaItems, batchId)
             message.value = "${uris.size} files selected"
+            ScanController.start(ctx, settings.value)
         }
     }
 
@@ -235,107 +229,73 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
             val cfg = settings.value
             val ex = cfg.excludes.split(",").map { it.trim() }.filter { it.isNotEmpty() } + cfg.destRoot
             val found = Media.scanFolder(File(path), ex)
-            setItems(found)
+            val batchId = System.currentTimeMillis()
+            Repo.upsertPending(ctx, found, batchId)
             message.value = "Found ${found.size} files"
+            ScanController.start(ctx, settings.value)
         }
-    }
-
-    private fun replace(si: SortItem) {
-        val i = index[si.media.uri] ?: return
-        items.update { l -> if (i < l.size) l.toMutableList().also { it[i] = si } else l }
     }
 
     fun startScan() {
         if (running.value) return
-        val todo = items.value.filter { it.status == Status.PENDING || it.status == Status.ERROR }.map { it.media }
-        if (todo.isEmpty()) {
-            message.value = "Nothing to scan"
-            return
-        }
-        running.value = true
-        val done = AtomicInteger(0)
-        progress.value = 0 to todo.size
-        job = viewModelScope.launch(Dispatchers.Default) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
-                // ensure examples have embeddings for current model
                 categories.value = engine.ensureExamples(settings.value, categories.value)
                 CategoryStore.save(ctx, categories.value)
-                val cands = engine.candidates(settings.value, categories.value)
-                engine.run(
-                    todo, settings.value, categories.value,
-                    onItem = { si ->
-                        replace(si)
-                        progress.value = done.incrementAndGet() to todo.size
-                    },
-                    onBackendError = { b, e -> message.value = "$b unavailable: $e" }
-                )
-                redecide(cands)
-                suggest()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Throwable) {
+                ScanController.start(ctx, settings.value)
+            } catch (e: Exception) {
                 message.value = "Error: ${e.message}"
-            } finally {
-                running.value = false
             }
         }
     }
 
     fun stopScan() {
-        job?.cancel()
+        ScanController.stop(ctx)
     }
 
     fun applyAuto() {
         viewModelScope.launch(Dispatchers.IO) {
             val cfg = settings.value
-            history.clear()
+            val batchId = System.currentTimeMillis()
+            var totalDone = 0
             var failed = 0
-            for (si in items.value.filter { it.status == Status.AUTO }) {
-                try {
-                    val op = FileOps.place(ctx, si.media, si.label, cfg).firstOrNull() ?: Op(null, "", false)
-                    history.add(Triple(si.media.uri, op, Status.AUTO))
-                    replace(si.copy(status = Status.DONE, note = "-> ${si.label}"))
-                } catch (e: Exception) {
-                    failed++
-                    replace(si.copy(status = Status.ERROR, note = e.message ?: "failed"))
+            var offset = 0
+            while (true) {
+                val page = Repo.page(ctx, Filter(statuses = setOf(Status.AUTO)), offset, 200)
+                if (page.isEmpty()) break
+                for (si in page) {
+                    try {
+                        val ops = FileOps.place(ctx, si.media, si.label, cfg, si.extraLabels)
+                        Repo.addHistory(ctx, batchId, si, ops, "auto")
+                        val destPath = ops.firstOrNull()?.dest
+                        Repo.saveResults(ctx, listOf(si.copy(status = Status.DONE, destPath = destPath, note = "-> ${si.label}")))
+                        totalDone++
+                    } catch (e: Exception) {
+                        failed++
+                        Repo.saveResults(ctx, listOf(si.copy(status = Status.ERROR, note = e.message ?: "failed")))
+                    }
                 }
+                offset += page.size
+                if (page.size < 200) break
             }
-            canUndo.value = history.isNotEmpty()
-            message.value = "${history.size} ${if (cfg.move) "moved" else "copied"}, $failed failed"
+            canUndo.value = true
+            history.value = Repo.historyPage(ctx, 0, 100)
+            message.value = "$totalDone ${if (cfg.move) "moved" else "copied"}, $failed failed"
         }
     }
 
     fun assign(si: SortItem, folder: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val op = FileOps.place(ctx, si.media, folder, settings.value).firstOrNull() ?: Op(null, "", false)
-                history.add(Triple(si.media.uri, op, Status.REVIEW))
-                canUndo.value = true
-                replace(si.copy(status = Status.DONE, note = "-> $folder"))
-                val emb = si.emb
-                if (emb != null) {
-                    val model = settings.value.model
-                    val cur = categories.value.toMutableList()
-                    val idx = cur.indexOfFirst { it.name == folder }
-                    if (idx >= 0) {
-                        val ex = cur[idx].examples.find { it.name == si.media.name }
-                        if (ex != null) {
-                            val newEmbs = ex.embs.toMutableMap()
-                            newEmbs[model] = emb
-                            cur[idx] = cur[idx].copy(examples = cur[idx].examples.map {
-                                if (it.name == si.media.name) it.copy(embs = newEmbs) else it
-                            })
-                        } else {
-                            cur[idx] = cur[idx].copy(examples = cur[idx].examples + Example(si.media.name, si.media.path, mapOf(model to emb)))
-                        }
-                    } else {
-                        cur.add(Category(folder, listOf(Example(si.media.name, si.media.path, mapOf(model to emb)))))
-                    }
-                    categories.value = cur
-                    CategoryStore.save(ctx, cur)
-                    val cands = engine.candidates(settings.value, cur)
-                    redecide(cands)
-                }
+                val cfg = settings.value
+                val ops = FileOps.place(ctx, si.media, folder, cfg, si.extraLabels)
+                val batchId = System.currentTimeMillis()
+                Repo.addHistory(ctx, batchId, si, ops, "review")
+                val destPath = ops.firstOrNull()?.dest
+                Repo.saveResults(ctx, listOf(si.copy(status = Status.DONE, destPath = destPath, note = "-> $folder")))
+                learn(folder, si)
+                history.value = Repo.historyPage(ctx, 0, 100)
+                message.value = "Assigned to $folder"
             } catch (e: Exception) {
                 message.value = "Failed: ${e.message}"
             }
@@ -344,19 +304,123 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
 
     fun undo() {
         viewModelScope.launch(Dispatchers.IO) {
+            val rows = Repo.historyPage(ctx, 0, 1)
+            val batchId = rows.firstOrNull()?.batchId
+            if (batchId != null) undoBatch(batchId) else {
+                message.value = "Nothing to undo"
+            }
+        }
+    }
+
+    fun undoBatch(batchId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val batchRows = mutableListOf<HistoryRow>()
+            var offset = 0
+            while (true) {
+                val p = Repo.historyPage(ctx, offset, 200)
+                if (p.isEmpty()) break
+                batchRows.addAll(p.filter { it.batchId == batchId })
+                offset += p.size
+                if (p.size < 200) break
+            }
             var n = 0
-            for ((uri, op, prev) in history.reversed()) {
+            for (hr in batchRows) {
                 try {
-                    FileOps.undo(ctx, op)
-                    val i = index[uri]
-                    if (i != null) items.value.getOrNull(i)?.let { replace(it.copy(status = prev, note = "")) }
+                    val moved = hr.srcPath != null && !File(hr.srcPath).exists()
+                    FileOps.undo(ctx, Op(hr.srcPath, hr.destPath, moved))
+                    val si = findMediaByDest(hr.destPath)
+                    if (si != null) {
+                        val newStatus = if (hr.action == "auto") Status.AUTO else Status.REVIEW
+                        Repo.saveResults(ctx, listOf(si.copy(status = newStatus, destPath = null, note = "")))
+                    }
+                    Repo.markHistory(ctx, hr.id, "undone")
                     n++
                 } catch (_: Exception) {
                 }
             }
-            history.clear()
-            canUndo.value = false
+            canUndo.value = Repo.historyPage(ctx, 0, 1).isNotEmpty() && Repo.historyPage(ctx, 0, 1).any { it.status == "ok" }
+            history.value = Repo.historyPage(ctx, 0, 100)
             message.value = "Undid $n files"
+        }
+    }
+
+    fun undoOne(historyId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val hr = findHistory(historyId) ?: run {
+                message.value = "History row not found"
+                return@launch
+            }
+            try {
+                val moved = hr.srcPath != null && !File(hr.srcPath).exists()
+                FileOps.undo(ctx, Op(hr.srcPath, hr.destPath, moved))
+                val si = findMediaByDest(hr.destPath)
+                if (si != null) {
+                    val newStatus = if (hr.action == "auto") Status.AUTO else Status.REVIEW
+                    Repo.saveResults(ctx, listOf(si.copy(status = newStatus, destPath = null, note = "")))
+                }
+                Repo.markHistory(ctx, hr.id, "undone")
+                history.value = Repo.historyPage(ctx, 0, 100)
+                message.value = "Undid 1 file"
+            } catch (e: Exception) {
+                message.value = "Undo failed: ${e.message}"
+            }
+        }
+    }
+
+    fun changeCategory(historyId: Long, newLabel: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val hr = findHistory(historyId) ?: run {
+                message.value = "History row not found"
+                return@launch
+            }
+            try {
+                val si = findMediaByDest(hr.destPath) ?: SortItem(
+                    media = MediaItem(uri = Uri.fromFile(File(hr.destPath)), path = hr.destPath, name = File(hr.destPath).name, isVideo = false),
+                    label = hr.label, status = Status.DONE, destPath = hr.destPath
+                )
+                val cfg = settings.value
+                val ops = FileOps.place(ctx, si.media, newLabel, cfg, si.extraLabels)
+                val newDest = ops.firstOrNull()?.dest ?: hr.destPath
+                val updated = si.copy(label = newLabel, destPath = newDest, status = Status.DONE, note = "-> $newLabel")
+                Repo.saveResults(ctx, listOf(updated))
+                val batchId = System.currentTimeMillis()
+                Repo.addHistory(ctx, batchId, updated, ops, "change")
+                learn(newLabel, si)
+                history.value = Repo.historyPage(ctx, 0, 100)
+                message.value = "Category changed"
+            } catch (e: Exception) {
+                message.value = "Change failed: ${e.message}"
+            }
+        }
+    }
+
+    fun resolveMissing(ids: List<Long>, remove: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            for (id in ids) {
+                Repo.markHistory(ctx, id, if (remove) "undone" else "ok")
+            }
+            history.value = Repo.historyPage(ctx, 0, 100)
+            message.value = if (remove) "Removed missing entries" else "Kept missing entries"
+        }
+    }
+
+    fun exportCsv(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                ctx.contentResolver.openOutputStream(uri)?.use { os -> Repo.exportHistoryCsv(ctx, os) }
+                message.value = "Exported CSV"
+            } catch (e: Exception) {
+                message.value = "Export failed: ${e.message}"
+            }
+        }
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            Repo.clearHistory(ctx)
+            history.value = emptyList()
+            canUndo.value = false
+            message.value = "History cleared"
         }
     }
 
@@ -382,8 +446,7 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 categories.value = cur
                 CategoryStore.save(ctx, cur)
-                val cands = engine.candidates(settings.value, cur)
-                redecide(cands)
+                redecideRows()
                 message.value = "Category \"$name\" now has ${examples.size} example(s)"
             } catch (e: Exception) {
                 message.value = "createCategory failed: ${e.message}"
@@ -398,15 +461,14 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
             if (!removed) return@launch
             categories.value = cur
             CategoryStore.save(ctx, cur)
-            val cands = engine.candidates(settings.value, cur)
-            redecide(cands)
+            redecideRows()
             message.value = "Deleted \"$name\""
         }
     }
 
     fun suggest() {
         viewModelScope.launch(Dispatchers.Default) {
-            suggestions.value = Suggest.clusters(items.value)
+            suggestions.value = Suggest.clusters(Repo.page(ctx, Filter(), 0, 500))
         }
     }
 
@@ -431,8 +493,7 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
 
                 removeSuggestion(cluster)
 
-                val cands = engine.candidates(settings.value, cur)
-                redecide(cands)
+                redecideRows()
                 message.value = "Created \"$finalName\" from ${examples.size} examples"
             } catch (e: Exception) {
                 message.value = "approveCluster failed: ${e.message}"
@@ -449,17 +510,78 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
         removeSuggestion(cluster)
     }
 
-    private fun redecide(cands: List<Candidate>? = null) {
+    private fun redecideRows() {
         val cfg = settings.value
         val cats = categories.value
         viewModelScope.launch(Dispatchers.IO) {
-            val candidates = cands ?: if (cfg.model == "clip") engine.candidates(cfg, cats) else emptyList()
-            items.update { l ->
-                l.map {
+            val candidates = if (cfg.model == "clip") engine.candidates(cfg, cats) else emptyList()
+            var offset = 0
+            val filter = Filter(statuses = setOf(Status.AUTO, Status.REVIEW))
+            while (true) {
+                val page = Repo.page(ctx, filter, offset, 500)
+                if (page.isEmpty()) break
+                val updated = page.map {
                     if (it.status == Status.AUTO || it.status == Status.REVIEW)
                         Decision.apply(it, cats, cfg, candidates) else it
                 }
+                Repo.saveResults(ctx, updated)
+                offset += page.size
+                if (page.size < 500) break
             }
         }
+    }
+
+    private fun redecide(cands: List<Candidate>? = null) {
+        viewModelScope.launch(Dispatchers.IO) { redecideRows() }
+    }
+
+    private fun learn(folder: String, si: SortItem) {
+        val emb = si.emb ?: return
+        val model = settings.value.model
+        val cur = categories.value.toMutableList()
+        val idx = cur.indexOfFirst { it.name == folder }
+        if (idx >= 0) {
+            val ex = cur[idx].examples.find { it.name == si.media.name }
+            if (ex != null) {
+                val newEmbs = ex.embs.toMutableMap()
+                newEmbs[model] = emb
+                cur[idx] = cur[idx].copy(examples = cur[idx].examples.map {
+                    if (it.name == si.media.name) it.copy(embs = newEmbs) else it
+                })
+            } else {
+                cur[idx] = cur[idx].copy(examples = cur[idx].examples + Example(si.media.name, si.media.path, mapOf(model to emb)))
+            }
+        } else {
+            cur.add(Category(folder, listOf(Example(si.media.name, si.media.path, mapOf(model to emb)))))
+        }
+        categories.value = cur
+        CategoryStore.save(ctx, cur)
+        redecideRows()
+    }
+
+    private fun findMediaByDest(dest: String): SortItem? {
+        var offset = 0
+        while (true) {
+            val p = Repo.page(ctx, Filter(statuses = setOf(Status.DONE)), offset, 500)
+            if (p.isEmpty()) break
+            val found = p.firstOrNull { it.destPath == dest }
+            if (found != null) return found
+            offset += p.size
+            if (p.size < 500) break
+        }
+        return null
+    }
+
+    private fun findHistory(id: Long): HistoryRow? {
+        var offset = 0
+        while (true) {
+            val p = Repo.historyPage(ctx, offset, 200)
+            if (p.isEmpty()) break
+            val found = p.firstOrNull { it.id == id }
+            if (found != null) return found
+            offset += p.size
+            if (p.size < 200) break
+        }
+        return null
     }
 }

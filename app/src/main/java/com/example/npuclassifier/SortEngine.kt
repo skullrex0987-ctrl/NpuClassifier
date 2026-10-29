@@ -266,6 +266,65 @@ class SortEngine(private val ctx: Context) {
     }
 
     suspend fun runQueue(ctx: Context, cfg: SortSettings, cats: List<Category>) {
-        // Stub: implemented in CP1 Agent B
+        AppLog.init(ctx)
+        val engine = this
+        // Stage 1: PENDING files
+        if (cfg.scanMode != "smart") {
+            while (true) {
+                val batch = Repo.nextPending(ctx, Status.PENDING, 50)
+                if (batch.isEmpty()) break
+                for (m in batch) {
+                    try {
+                        val si = processItem(m, cfg, cats, Backend.CPU)
+                        val status = if (cfg.scanMode == "fast") {
+                            if (si.status == Status.REVIEW) Status.REVIEW else si.status
+                        } else {
+                            if (si.status == Status.REVIEW) Status.NEEDS_SMART else si.status
+                        }
+                        Repo.saveResults(ctx, listOf(si.copy(status = status)))
+                        val bmp = try { decode(m) } catch (e: Exception) { null }
+                        if (bmp != null) {
+                            Thumbs.save(ctx, m.id, bmp)
+                            bmp.recycle()
+                        }
+                    } catch (e: Exception) {
+                        AppLog.e("SortEngine", "stage1 failed ${m.name}", e)
+                        Repo.saveResults(ctx, listOf(SortItem(media = m, status = Status.ERROR, note = e.message ?: "error")))
+                    }
+                }
+            }
+        } else {
+            // smart: mark all PENDING as NEEDS_SMART
+            val d = Db.get(ctx)
+            d.execSQL("UPDATE media SET status='NEEDS_SMART' WHERE status='PENDING'")
+        }
+        // Stage 2: NEEDS_SMART files
+        val smartEmbedder: Embedder? = when (cfg.model) {
+            "clip" -> ClipEmbedder(ctx, Backend.CPU)
+            else -> null
+        }
+        try {
+            while (true) {
+                val batch = Repo.nextPending(ctx, Status.NEEDS_SMART, 50)
+                if (batch.isEmpty()) break
+                for (m in batch) {
+                    try {
+                        val bmp = decode(m)
+                        val emb = smartEmbedder?.embedImage(bmp)
+                        val thumbPath = Thumbs.save(ctx, m.id, bmp)
+                        bmp.recycle()
+                        val si = SortItem(media = m, emb = emb, backend = Backend.CPU, thumb = thumbPath)
+                        val decided = Decision.apply(si, cats, cfg, engine.candidates(cfg, cats))
+                        Repo.saveResults(ctx, listOf(decided.copy(status = if (decided.status == Status.REVIEW) Status.REVIEW else decided.status)))
+                    } catch (e: Exception) {
+                        AppLog.e("SortEngine", "stage2 failed ${m.name}", e)
+                        Repo.saveResults(ctx, listOf(SortItem(media = m, status = Status.ERROR, note = e.message ?: "error")))
+                    }
+                }
+            }
+        } finally {
+            smartEmbedder?.close()
+        }
+        ScanController.update(ScanState(running = false, stage = "idle", message = "Done"))
     }
 }
