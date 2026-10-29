@@ -55,3 +55,32 @@
 
 ### Speed
 - decode() uses setTargetSampleSize (biggest power of 2 keeping min side >= 256)
+
+## Phase 3 contracts (added)
+
+### New model support
+- SortSettings: + model: String = "mnet" ("mnet" or "clip")
+- Prefs: save/load "model"
+
+### New files
+- ClipTokenizer.kt: object ClipTokenizer with load(InputStream) and encode(text): LongArray
+- ClipClassifier.kt: class ClipClassifier(ctx) with imageEmbed(Bitmap): FloatArray, textEmbed(text): FloatArray, close()
+- BuiltinLabels.kt: object BuiltinLabels with labels: List<String>
+
+### ONNX Runtime
+- Dependency: com.microsoft.onnxruntime:onnxruntime-android:1.18.0
+- Model files: assets/clip/vision.onnx, assets/clip/text.onnx, assets/clip/tokenizer.json
+- Downloaded in CI workflow from HuggingFace
+
+### CLIP decision rule (cfg.model == "clip")
+a) If useMine: matchCategories (best 3 cosines to examples). If best >= catThreshold and best-second >= catGap -> category (source "mine").
+b) Else TEXT RULE: candidates = category names (source "mine") + builtin labels (source "builtin"). Softmax over 100*cosine. If best p >= threshold and best-second >= minGap -> candidate.
+c) Else Review. item.top = top 3 candidates (name, p).
+
+### Video analysis
+- Sample frames evenly across ENTIRE video duration (not just start)
+- Use getFrameAtTime with OPTION_CLOSEST_SYNC
+- Recycle bitmaps after use
+
+### App icon
+- @drawable/ic_launcher_foreground (vector drawable)
