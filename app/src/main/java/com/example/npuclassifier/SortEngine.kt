@@ -412,6 +412,7 @@ class SortEngine(private val ctx: Context) {
                 producersDone = true
             }.apply { isDaemon = true; start() }
 
+            val cands = engine.candidates(cfg, cats)
             val worker = Thread {
                 while (true) {
                     val d = decoded.poll(1, java.util.concurrent.TimeUnit.SECONDS)
@@ -426,7 +427,7 @@ class SortEngine(private val ctx: Context) {
                             val emb = smartEmbedder?.embedImage(d.bmp)
                             val thumbPath = Thumbs.save(ctx, d.m.id, d.bmp)
                             val si = SortItem(media = d.m, emb = emb, backend = Backend.CPU, thumb = thumbPath)
-                            val decided = Decision.apply(si, cats, cfg, engine.candidates(cfg, cats))
+                            val decided = Decision.apply(si, cats, cfg, cands)
                             val status = if (decided.status == Status.REVIEW) Status.REVIEW else decided.status
                             sink.add(decided.copy(status = status))
                             done++
