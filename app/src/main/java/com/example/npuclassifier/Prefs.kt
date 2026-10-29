@@ -19,7 +19,11 @@ class Prefs(ctx: Context) {
             excludes = p.getString("excl", d.excludes) ?: d.excludes,
             frameIntervalSec = p.getInt("fint", d.frameIntervalSec),
             maxFrames = p.getInt("fmax", d.maxFrames),
-            backends = backends
+            backends = backends,
+            catThreshold = p.getFloat("catThr", d.catThreshold),
+            catGap = p.getFloat("catGap", d.catGap),
+            useMine = p.getBoolean("useMine", d.useMine),
+            useBuiltin = p.getBoolean("useBuiltin", d.useBuiltin)
         )
     }
 
@@ -33,6 +37,10 @@ class Prefs(ctx: Context) {
             .putInt("fint", s.frameIntervalSec)
             .putInt("fmax", s.maxFrames)
             .putStringSet("backends", s.backends.map { it.name }.toSet())
+            .putFloat("catThr", s.catThreshold)
+            .putFloat("catGap", s.catGap)
+            .putBoolean("useMine", s.useMine)
+            .putBoolean("useBuiltin", s.useBuiltin)
             .apply()
     }
 }

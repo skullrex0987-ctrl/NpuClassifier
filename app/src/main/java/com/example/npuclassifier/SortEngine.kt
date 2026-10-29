@@ -34,6 +34,7 @@ class SortEngine(private val ctx: Context) {
     suspend fun run(
         items: List<MediaItem>,
         cfg: SortSettings,
+        cats: List<Category>,
         onItem: (SortItem) -> Unit,
         onBackendError: (Backend, String) -> Unit
     ) {
@@ -136,5 +137,11 @@ class SortEngine(private val ctx: Context) {
         } finally {
             r.release()
         }
+    }
+
+    /** Classify with NPU (fallback CPU), return fingerprints. */
+    suspend fun embedFiles(items: List<MediaItem>): List<FloatArray?> {
+        // Stub - Agent A will implement
+        return items.map { null }
     }
 }

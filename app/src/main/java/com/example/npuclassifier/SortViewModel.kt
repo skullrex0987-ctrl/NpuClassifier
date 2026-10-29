@@ -25,6 +25,8 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
     val running = MutableStateFlow(false)
     val message = MutableStateFlow<String?>(null)
     val canUndo = MutableStateFlow(false)
+    val categories = MutableStateFlow<List<Category>>(emptyList())
+    val suggestions = MutableStateFlow<List<Cluster>>(emptyList())
 
     private var index = HashMap<Uri, Int>()
     private var job: Job? = null
@@ -91,7 +93,7 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
         job = viewModelScope.launch(Dispatchers.Default) {
             try {
                 engine.run(
-                    todo, settings.value,
+                    todo, settings.value, categories.value,
                     onItem = { si ->
                         replace(si)
                         progress.value = done.incrementAndGet() to todo.size
@@ -161,5 +163,29 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
             canUndo.value = false
             message.value = "Undid $n files"
         }
+    }
+
+    fun createCategory(name: String, uris: List<Uri>) {
+        // Stub - Agent C will implement
+    }
+
+    fun deleteCategory(name: String) {
+        // Stub - Agent C will implement
+    }
+
+    fun suggest() {
+        // Stub - Agent C will implement
+    }
+
+    fun approveCluster(cluster: Cluster, finalName: String) {
+        // Stub - Agent C will implement
+    }
+
+    fun dismissCluster(cluster: Cluster) {
+        // Stub - Agent C will implement
+    }
+
+    private fun redecide() {
+        // Stub - Agent C will implement
     }
 }
