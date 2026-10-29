@@ -31,3 +31,27 @@
 - Phase 1 folder names are raw ImageNet labels (e.g. "Tabby"), which is why Phase 2 matters.
 - NNAPI is deprecated on Android 15+; NPU may fall back to CPU for unsupported models.
 - GPU delegate must run on the thread that created it (handled in SortEngine: one thread per backend).
+
+## Phase 2 contracts (added)
+
+### New models
+- SortItem: + emb: FloatArray? = null, source: String = ""
+- Example: data class (name, path, emb)
+- Category: data class (name, examples)
+
+### New settings
+- SortSettings: + catThreshold (0.80), catGap (0.03), useMine (true), useBuiltin (true)
+
+### New objects
+- Emb: fromScores (sqrt + L2 normalize), cosine (dot product)
+- Decision: matchCategories (best-first list), apply (mine/builtin/review cascade)
+- CategoryStore: load/save JSON in filesDir/categories.json
+- Suggest: clusters (greedy, centroid = normalized avg, minSize, max 12)
+
+### New signatures
+- SortEngine.run(items, cfg, cats, onItem, onBackendError)
+- SortEngine.embedFiles(items): List<FloatArray?>
+- SortViewModel: categories, suggestions, createCategory, deleteCategory, suggest, approveCluster, dismissCluster
+
+### Speed
+- decode() uses setTargetSampleSize (biggest power of 2 keeping min side >= 256)
