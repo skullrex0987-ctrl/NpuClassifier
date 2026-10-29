@@ -7,7 +7,7 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import java.nio.FloatBuffer
 
-class ClipEmbedder(ctx: Context, override val backend: Backend) : Embedder {
+class ClipEmbedder(ctx: Context, val backend: Backend) : Embedder {
     private val env = OrtEnvironment.getEnvironment()
     private val visionSession: OrtSession
     private val textSession: OrtSession

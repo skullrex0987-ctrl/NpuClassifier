@@ -85,7 +85,7 @@ class SortEngine(private val ctx: Context) {
         }
     }
 
-    private fun processItem(m: MediaItem, cfg: SortSettings, cats: List<Category>, b: Backend): SortItem {
+    private suspend fun processItem(m: MediaItem, cfg: SortSettings, cats: List<Category>, b: Backend): SortItem {
         if (m.isVideo) {
             val frameItems = mutableListOf<SortItem>()
             VideoAnalyzer.forEachFrame(ctx, m, cfg) { bmp ->

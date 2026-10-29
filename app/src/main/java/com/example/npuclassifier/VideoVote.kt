@@ -26,7 +26,7 @@ object VideoVote {
             return item.copy(
                 label = winner.key,
                 conf = share,
-                gap = share - (sorted.getOrElse(1) { Map.Entry("", 0) }.value.toFloat() / total),
+                gap = share - (sorted.getOrElse(1) { java.util.AbstractMap.SimpleEntry("", 0) }.value.toFloat() / total),
                 status = Status.AUTO,
                 source = frames.firstOrNull { it.label == winner.key }?.source ?: "",
                 note = note
