@@ -1,21 +1,21 @@
 package com.example.npuclassifier
 
+import android.content.Context
 import org.json.JSONObject
-import java.io.InputStream
 
-object ClipTokenizer {
-    private const val SOT = 49406
-    private const val EOT = 49407
-    private const val MAXLEN = 77
+class ClipTokenizer(ctx: Context) {
+    private val SOT = 49406
+    private val EOT = 49407
+    private val MAXLEN = 77
 
     private var vocab: Map<String, Int> = emptyMap()
-    private var merges: Map<String, Int> = emptyMap() // "a b" -> rank
+    private var merges: Map<String, Int> = emptyMap()
     private var byteEncoder: Map<Int, Char> = emptyMap()
-    private var byteDecoder: Map<Char, Int> = emptyMap()
-    private var loaded = false
 
-    fun load(input: InputStream) {
+    init {
+        val input = ctx.assets.open("clip/tokenizer.json")
         val root = JSONObject(input.bufferedReader().readText())
+        input.close()
         val vocabObj = root.getJSONObject("model").getJSONObject("vocab")
         val v = mutableMapOf<String, Int>()
         val keys = vocabObj.keys()
@@ -38,9 +38,7 @@ object ClipTokenizer {
         }
         merges = m
 
-        // GPT-2 byte encoder
         val be = mutableMapOf<Int, Char>()
-        val bd = mutableMapOf<Char, Int>()
         val bs = mutableListOf<Int>()
         for (i in '!'.code..'~'.code) bs.add(i)
         for (i in 0xa1..0xac) bs.add(i)
@@ -48,62 +46,44 @@ object ClipTokenizer {
         var n = 0
         for (i in 0..255) {
             if (i !in bs) {
-                val c = (256 + n).toChar()
-                be[i] = c
-                bd[c] = i
+                be[i] = (256 + n).toChar()
                 n++
             } else {
                 be[i] = i.toChar()
-                bd[i.toChar()] = i
             }
         }
         byteEncoder = be
-        byteDecoder = bd
-        loaded = true
     }
 
     fun encode(text: String): LongArray {
-        if (!loaded) throw IllegalStateException("Tokenizer not loaded")
         val cleaned = text.lowercase().trim().replace(Regex("\\s+"), " ")
-        val tokens = mutableListOf<String>()
-        // Split with regex
-        val pattern = Regex("""<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|\p{L}+|\p{N}|[^\s\p{L}\p{N}]+""")
-        for (match in pattern.findAll(cleaned)) {
-            tokens.add(match.value)
-        }
+        val tokens = Regex("""<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|\p{L}+|\p{N}|[^\s\p{L}\p{N}]+""").findAll(cleaned).map { it.value }.toList()
 
         val bpeTokens = mutableListOf<String>()
         for (token in tokens) {
-            // bytes -> unicode chars (GPT-2 byte map)
             val bytes = token.toByteArray(Charsets.UTF_8)
             val chars = StringBuilder()
             for (b in bytes) {
                 chars.append(byteEncoder[(b.toInt() and 0xFF)] ?: '?')
             }
             val word = chars.toString()
-            // Apply BPE to the unicode chars (without </w>)
             val pieces = bpe(word)
-            // Append </w> to the last piece
             if (pieces.isNotEmpty()) {
                 pieces[pieces.size - 1] = pieces[pieces.size - 1] + "</w>"
             }
             bpeTokens.addAll(pieces)
         }
 
-        // map pieces to ids
         val ids = mutableListOf<Int>()
         for (piece in bpeTokens) {
-            ids.add(vocab[piece] ?: vocab["<|endoftext|>"] ?: 0)
+            ids.add(vocab[piece] ?: 0)
         }
 
-        // ids = [49406] + ids + [49407], cut to 77, pad with 0
         val result = mutableListOf<Int>()
         result.add(SOT)
         result.addAll(ids)
         result.add(EOT)
-        // cut to 77
         while (result.size > MAXLEN) result.removeAt(result.size - 1)
-        // pad with 0
         while (result.size < MAXLEN) result.add(0)
 
         return LongArray(MAXLEN) { result[it].toLong() }
@@ -112,9 +92,7 @@ object ClipTokenizer {
     private fun bpe(word: String): MutableList<String> {
         if (word.isEmpty()) return mutableListOf()
         var wordChars = word.map { it.toString() }.toMutableList()
-        // Apply merges
         while (wordChars.size > 1) {
-            // find best merge
             var bestRank = Int.MAX_VALUE
             var bestIdx = -1
             for (i in 0 until wordChars.size - 1) {
@@ -126,7 +104,6 @@ object ClipTokenizer {
                 }
             }
             if (bestIdx == -1) break
-            // merge
             val merged = wordChars[bestIdx] + wordChars[bestIdx + 1]
             val newChars = wordChars.subList(0, bestIdx).toMutableList()
             newChars.add(merged)

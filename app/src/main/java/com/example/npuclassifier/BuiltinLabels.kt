@@ -1,7 +1,7 @@
 package com.example.npuclassifier
 
 object BuiltinLabels {
-    val labels = listOf(
+    val CLIP: List<String> = listOf(
         "person", "selfie", "group photo", "baby", "dog", "cat", "bird", "animal",
         "flower", "tree", "mountain", "beach", "sunset", "sky", "city street", "building",
         "car", "motorcycle", "food", "drink", "restaurant menu", "receipt", "document",

@@ -3,21 +3,16 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Neural network nodes -->
-    <path android:fillColor="#00E5FF"
-        android:pathData="M30,40 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"/>
-    <path android:fillColor="#00E5FF"
-        android:pathData="M66,40 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"/>
-    <path android:fillColor="#00E5FF"
-        android:pathData="M48,70 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"/>
-    <path android:fillColor="#00E5FF"
-        android:pathData="M30,90 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"/>
-    <path android:fillColor="#00E5FF"
-        android:pathData="M66,90 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"/>
-    <!-- Connections -->
-    <path android:strokeColor="#00E5FF" android:strokeWidth="2"
-        android:pathData="M36,46 L54,64 M72,46 L54,64 M36,84 L54,76 M72,84 L54,76"/>
-    <!-- NPU text -->
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M44,20 L44,32 L50,32 L50,28 L48,28 L48,24 L50,24 L50,20 Z"/>
+    <path android:fillColor="#0B0B0F"
+        android:pathData="M0,0 h108 v108 h-108 z"/>
+    <path android:fillColor="#B69CFF"
+        android:pathData="M30,38 L30,72 Q30,76 34,76 L74,76 Q78,76 78,72 L78,44 Q78,40 74,40 L52,40 L48,36 Q46,34 42,34 L34,34 Q30,34 30,38 Z"/>
+    <path android:fillColor="#9B7FE8"
+        android:pathData="M30,38 Q30,34 34,34 L42,34 Q46,34 48,36 L52,40 L30,40 Z"/>
+    <path android:fillColor="#7FDBCA"
+        android:pathData="M60,50 L62,56 L68,58 L62,60 L60,66 L58,60 L52,58 L58,56 Z"/>
+    <path android:fillColor="#7FDBCA"
+        android:pathData="M42,56 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"/>
+    <path android:fillColor="#7FDBCA"
+        android:pathData="M48,64 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0"/>
 </vector>

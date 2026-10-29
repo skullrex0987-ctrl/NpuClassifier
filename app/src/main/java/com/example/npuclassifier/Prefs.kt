@@ -17,14 +17,15 @@ class Prefs(ctx: Context) {
             move = p.getBoolean("move", d.move),
             destRoot = p.getString("dest", d.destRoot) ?: d.destRoot,
             excludes = p.getString("excl", d.excludes) ?: d.excludes,
-            frameIntervalSec = p.getInt("fint", d.frameIntervalSec),
-            maxFrames = p.getInt("fmax", d.maxFrames),
             backends = backends,
             catThreshold = p.getFloat("catThr", d.catThreshold),
             catGap = p.getFloat("catGap", d.catGap),
             useMine = p.getBoolean("useMine", d.useMine),
             useBuiltin = p.getBoolean("useBuiltin", d.useBuiltin),
-            model = p.getString("model", d.model) ?: d.model
+            model = p.getString("model", d.model) ?: d.model,
+            videoDepth = p.getInt("videoDepth", d.videoDepth),
+            videoMajority = p.getFloat("videoMajority", d.videoMajority),
+            minFileKb = p.getInt("minFileKb", d.minFileKb)
         )
     }
 
@@ -35,14 +36,15 @@ class Prefs(ctx: Context) {
             .putBoolean("move", s.move)
             .putString("dest", s.destRoot)
             .putString("excl", s.excludes)
-            .putInt("fint", s.frameIntervalSec)
-            .putInt("fmax", s.maxFrames)
             .putStringSet("backends", s.backends.map { it.name }.toSet())
             .putFloat("catThr", s.catThreshold)
             .putFloat("catGap", s.catGap)
             .putBoolean("useMine", s.useMine)
             .putBoolean("useBuiltin", s.useBuiltin)
             .putString("model", s.model)
+            .putInt("videoDepth", s.videoDepth)
+            .putFloat("videoMajority", s.videoMajority)
+            .putInt("minFileKb", s.minFileKb)
             .apply()
     }
 }

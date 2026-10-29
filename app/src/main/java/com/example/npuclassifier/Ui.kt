@@ -479,11 +479,11 @@ private fun SettingsScreen(vm: SortViewModel, pad: PaddingValues) {
             value = cfg.excludes, onValueChange = { v -> vm.updateSettings { it.copy(excludes = v) } },
             label = { Text("Exclude folders (comma separated names or /paths)") }, modifier = Modifier.fillMaxWidth()
         )
-        SliderRow("Video: frame every", cfg.frameIntervalSec.toFloat(), 1f..10f, "${cfg.frameIntervalSec} s", steps = 8) { v ->
-            vm.updateSettings { it.copy(frameIntervalSec = v.roundToInt()) }
-        }
-        SliderRow("Video: max frames", cfg.maxFrames.toFloat(), 2f..24f, "${cfg.maxFrames}", steps = 21) { v ->
-            vm.updateSettings { it.copy(maxFrames = v.roundToInt()) }
+        Text("Video depth", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SelChip(selected = cfg.videoDepth == 0, label = "Quick (8)", onClick = { vm.updateSettings { it.copy(videoDepth = 0) } })
+            SelChip(selected = cfg.videoDepth == 1, label = "Balanced (24)", onClick = { vm.updateSettings { it.copy(videoDepth = 1) } })
+            SelChip(selected = cfg.videoDepth == 2, label = "Thorough", onClick = { vm.updateSettings { it.copy(videoDepth = 2) } })
         }
 
         Text("Categories", style = MaterialTheme.typography.labelLarge)

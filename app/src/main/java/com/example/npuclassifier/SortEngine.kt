@@ -3,7 +3,6 @@ package com.example.npuclassifier
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
-import android.media.MediaMetadataRetriever
 import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
@@ -27,17 +26,6 @@ class SortEngine(private val ctx: Context) {
                 .joinToString(" ") { w -> w.replaceFirstChar { it.uppercase() } }
     }
 
-    private var clipClassifier: ClipClassifier? = null
-
-    private fun getClip(): ClipClassifier {
-        if (clipClassifier == null) clipClassifier = ClipClassifier(ctx)
-        return clipClassifier!!
-    }
-
-    /**
-     * Processes [items] on every selected backend IN PARALLEL: each backend gets its own
-     * single thread + interpreter and pulls from one shared queue, so faster backends do more.
-     */
     suspend fun run(
         items: List<MediaItem>,
         cfg: SortSettings,
@@ -45,18 +33,25 @@ class SortEngine(private val ctx: Context) {
         onItem: (SortItem) -> Unit,
         onBackendError: (Backend, String) -> Unit
     ) {
-        val queue = ConcurrentLinkedQueue(items)
+        val filtered = items.filter { m ->
+            if (m.isVideo) true else {
+                val sizeKb = m.path?.let { File(it).length() / 1024 } ?: 0L
+                sizeKb >= cfg.minFileKb
+            }
+        }
+        val queue = ConcurrentLinkedQueue(filtered)
         val backends: Set<Backend> = if (cfg.backends.isEmpty()) setOf(Backend.CPU) else cfg.backends
+        val allowedBackends = if (cfg.model == "clip") backends.filter { it == Backend.CPU || it == Backend.NPU }.toSet() else backends
+        val finalBackends = if (allowedBackends.isEmpty()) setOf(Backend.CPU) else allowedBackends
         coroutineScope {
-            backends.map { b ->
+            finalBackends.map { b ->
                 val ex = Executors.newSingleThreadExecutor()
                 val job = async(ex.asCoroutineDispatcher()) { worker(b, queue, cfg, cats, onItem, onBackendError) }
                 job.invokeOnCompletion { ex.shutdown() }
                 job
             }.awaitAll()
         }
-        // If every chosen backend failed to start, fall back to CPU so nothing is left unprocessed.
-        if (queue.isNotEmpty() && Backend.CPU !in backends) {
+        if (queue.isNotEmpty() && Backend.CPU !in finalBackends) {
             val ex = Executors.newSingleThreadExecutor()
             try {
                 withContext(ex.asCoroutineDispatcher()) { worker(Backend.CPU, queue, cfg, cats, onItem, onBackendError) }
@@ -74,92 +69,84 @@ class SortEngine(private val ctx: Context) {
         onItem: (SortItem) -> Unit,
         onErr: (Backend, String) -> Unit
     ) {
-        val clf = try {
-            Classifier(ctx, b)
-        } catch (e: Throwable) {
-            onErr(b, e.message ?: e.javaClass.simpleName)
-            return
-        }
         try {
             while (isActive) {
                 val m = queue.poll() ?: break
                 val t0 = SystemClock.elapsedRealtime()
                 val si = try {
-                    process(clf, m, cfg, cats, b)
+                    processItem(m, cfg, cats, b)
                 } catch (e: Throwable) {
                     SortItem(m, status = Status.ERROR, note = e.message ?: "error", backend = b)
                 }
                 onItem(si.copy(ms = SystemClock.elapsedRealtime() - t0))
             }
+        } catch (e: Throwable) {
+            onErr(b, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun processItem(m: MediaItem, cfg: SortSettings, cats: List<Category>, b: Backend): SortItem {
+        if (m.isVideo) {
+            val frameItems = mutableListOf<SortItem>()
+            VideoAnalyzer.forEachFrame(ctx, m, cfg) { bmp ->
+                val item = processImage(bmp, m, cfg, cats, b, isFrame = true)
+                frameItems.add(item)
+            }
+            val videoItem = SortItem(media = m, frameItems = frameItems, backend = b)
+            return Decision.apply(videoItem, cats, cfg, candidates(cfg, cats))
+        }
+
+        val sizeKb = m.path?.let { File(it).length() / 1024 } ?: 0L
+        if (sizeKb < cfg.minFileKb) {
+            return SortItem(m, status = Status.REVIEW, note = "too small", backend = b)
+        }
+
+        val item = processImage(null, m, cfg, cats, b, isFrame = false)
+        return Decision.apply(item, cats, cfg, candidates(cfg, cats))
+    }
+
+    private fun processImage(bmp: Bitmap?, m: MediaItem, cfg: SortSettings, cats: List<Category>, b: Backend, isFrame: Boolean): SortItem {
+        val bitmap = bmp ?: decode(m)
+        val shouldRecycle = bmp == null
+
+        return try {
+            if (cfg.model == "clip") {
+                val embedder = ClipEmbedder(ctx, b)
+                try {
+                    val imgEmb = embedder.embedImage(bitmap)
+                    SortItem(
+                        media = m,
+                        emb = imgEmb,
+                        backend = b
+                    )
+                } finally {
+                    embedder.close()
+                }
+            } else {
+                val clf = Classifier(ctx, b)
+                try {
+                    val scores = clf.scores(bitmap)
+                    val order = scores.indices.sortedByDescending { scores[it] }.take(3)
+                    val top = order.map { (clf.labels.getOrNull(it) ?: "class $it") to scores[it] }
+                    val conf = top[0].second
+                    val gap = conf - (top.getOrNull(1)?.second ?: 0f)
+                    SortItem(
+                        media = m,
+                        label = prettyLabel(top[0].first),
+                        conf = conf,
+                        gap = gap,
+                        top = top,
+                        status = decide(conf, gap, cfg),
+                        backend = b,
+                        emb = Emb.fromScores(scores)
+                    )
+                } finally {
+                    clf.close()
+                }
+            }
         } finally {
-            clf.close()
+            if (shouldRecycle) bitmap.recycle()
         }
-    }
-
-    private fun process(
-        clf: Classifier, m: MediaItem, cfg: SortSettings, cats: List<Category>, b: Backend
-    ): SortItem {
-        if (cfg.model == "clip") {
-            return processClip(m, cfg, cats, b)
-        }
-        // MobileNet (Phase 2)
-        val scores = if (m.isVideo) videoScores(clf, m, cfg) else clf.scores(decode(m))
-        val order = scores.indices.sortedByDescending { scores[it] }.take(3)
-        val top = order.map { (clf.labels.getOrNull(it) ?: "class $it") to scores[it] }
-        val conf = top[0].second
-        val gap = conf - (top.getOrNull(1)?.second ?: 0f)
-        val item = SortItem(
-            media = m,
-            label = prettyLabel(top[0].first),
-            conf = conf,
-            gap = gap,
-            top = top,
-            status = decide(conf, gap, cfg),
-            backend = b,
-            emb = Emb.fromScores(scores)
-        )
-        return Decision.apply(item, cats, cfg)
-    }
-
-    private fun processClip(m: MediaItem, cfg: SortSettings, cats: List<Category>, b: Backend): SortItem {
-        val clip = getClip()
-        val bitmap = if (m.isVideo) {
-            // Use middle frame for video
-            val r = MediaMetadataRetriever()
-            try {
-                if (m.path != null) r.setDataSource(m.path) else r.setDataSource(ctx, m.uri)
-                val durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                r.getFrameAtTime(durMs * 500L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-            } finally {
-                r.release()
-            }
-        } else {
-            decode(m)
-        } ?: return SortItem(m, status = Status.ERROR, note = "Could not decode", backend = b)
-
-        val imgEmb = clip.imageEmbed(bitmap)
-        if (m.isVideo) bitmap.recycle()
-
-        // Cache text embeddings for all candidate labels
-        val candidateLabels = mutableSetOf<String>()
-        if (cfg.useMine) {
-            for (cat in cats) candidateLabels.add(cat.name)
-        }
-        if (cfg.useBuiltin) {
-            candidateLabels.addAll(BuiltinLabels.labels)
-        }
-        for (label in candidateLabels) {
-            if (!Decision.hasClipText(label)) {
-                Decision.cacheClipText(label, clip.textEmbed(label))
-            }
-        }
-
-        val item = SortItem(
-            media = m,
-            emb = imgEmb,
-            backend = b
-        )
-        return Decision.apply(item, cats, cfg)
     }
 
     private fun decode(m: MediaItem): Bitmap {
@@ -176,65 +163,105 @@ class SortEngine(private val ctx: Context) {
         }
     }
 
-    /** Samples frames evenly across the ENTIRE video duration. */
-    private fun videoScores(clf: Classifier, m: MediaItem, cfg: SortSettings): FloatArray {
-        val r = MediaMetadataRetriever()
-        try {
-            if (m.path != null) r.setDataSource(m.path) else r.setDataSource(ctx, m.uri)
-            val durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            // Sample more frames for longer videos to cover the whole duration
-            val maxFrames = cfg.maxFrames.coerceAtLeast(1)
-            val byInterval = (durMs / (cfg.frameIntervalSec * 1000L)).toInt().coerceAtLeast(1)
-            val n = minOf(maxFrames, byInterval).coerceAtLeast(1)
-            var acc: FloatArray? = null
-            var cnt = 0
-            for (i in 0 until n) {
-                val tUs = durMs * 1000L * (2 * i + 1) / (2 * n) // centre of each segment
-                val bmp = r.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: continue
-                val s = clf.scores(bmp)
-                if (acc == null) acc = FloatArray(s.size)
-                for (k in s.indices) acc[k] += s[k]
-                cnt++
-                bmp.recycle()
+    suspend fun embedFiles(items: List<MediaItem>, cfg: SortSettings): List<FloatArray?> {
+        return items.map { m ->
+            try {
+                if (cfg.model == "clip") {
+                    val embedder = ClipEmbedder(ctx, Backend.CPU)
+                    try {
+                        val bmp = decode(m)
+                        val emb = embedder.embedImage(bmp)
+                        bmp.recycle()
+                        emb
+                    } finally {
+                        embedder.close()
+                    }
+                } else {
+                    val clf = Classifier(ctx, Backend.CPU)
+                    try {
+                        val scores = clf.scores(decode(m))
+                        Emb.fromScores(scores)
+                    } finally {
+                        clf.close()
+                    }
+                }
+            } catch (e: Exception) {
+                null
             }
-            val a = requireNotNull(acc) { "Could not read video frames" }
-            for (k in a.indices) a[k] = a[k] / cnt
-            return a
-        } finally {
-            r.release()
         }
     }
 
-    /**
-     * Classify each item with NPU (falling back to CPU if NPU is unavailable) and return
-     * normalized fingerprints. Failed items yield null so callers can skip them.
-     */
-    suspend fun embedFiles(items: List<MediaItem>): List<FloatArray?> {
-        val clf = try {
-            Classifier(ctx, Backend.NPU)
-        } catch (e: Throwable) {
-            try {
-                Classifier(ctx, Backend.CPU)
-            } catch (e2: Throwable) {
-                return items.map { null }
-            }
-        }
-        return try {
-            items.map { m ->
+    suspend fun ensureExamples(cfg: SortSettings, cats: List<Category>): List<Category> {
+        return cats // simplified
+    }
+
+    suspend fun candidates(cfg: SortSettings, cats: List<Category>): List<Candidate> {
+        if (cfg.model != "clip") return emptyList()
+        val cands = mutableListOf<Candidate>()
+        if (cfg.useMine) {
+            for (cat in cats) {
+                val prompt = if (cat.prompt.isNotEmpty()) cat.prompt else "a photo of ${cat.name}"
+                val embedder = ClipEmbedder(ctx, Backend.CPU)
                 try {
-                    val scores = if (m.isVideo) videoScores(clf, m, SortSettings()) else clf.scores(decode(m))
-                    Emb.fromScores(scores)
-                } catch (e: Throwable) {
-                    null
+                    val textEmb = embedder.embedText(prompt)
+                    if (textEmb != null) {
+                        cands.add(Candidate(cat.name, "mine", textEmb))
+                    }
+                } finally {
+                    embedder.close()
                 }
             }
-        } finally {
-            clf.close()
         }
+        if (cfg.useBuiltin) {
+            val embedder = ClipEmbedder(ctx, Backend.CPU)
+            try {
+                for (label in BuiltinLabels.CLIP) {
+                    val textEmb = embedder.embedText(label)
+                    if (textEmb != null) {
+                        cands.add(Candidate(label, "builtin", textEmb))
+                    }
+                }
+            } finally {
+                embedder.close()
+            }
+        }
+        return cands
     }
 
-    fun close() {
-        clipClassifier?.close()
-        clipClassifier = null
+    suspend fun speedTest(items: List<MediaItem>, cfg: SortSettings): Map<Backend, Double> {
+        val testItems = items.take(20)
+        val result = mutableMapOf<Backend, Double>()
+        for (b in cfg.backends) {
+            if (cfg.model == "clip" && b == Backend.GPU) continue
+            val times = mutableListOf<Long>()
+            for (m in testItems) {
+                val t0 = SystemClock.elapsedRealtime()
+                try {
+                    if (cfg.model == "clip") {
+                        val embedder = ClipEmbedder(ctx, b)
+                        try {
+                            val bmp = decode(m)
+                            embedder.embedImage(bmp)
+                            bmp.recycle()
+                        } finally {
+                            embedder.close()
+                        }
+                    } else {
+                        val clf = Classifier(ctx, b)
+                        try {
+                            clf.scores(decode(m))
+                        } finally {
+                            clf.close()
+                        }
+                    }
+                } catch (e: Exception) {
+                }
+                times.add(SystemClock.elapsedRealtime() - t0)
+            }
+            if (times.isNotEmpty()) {
+                result[b] = times.average()
+            }
+        }
+        return result
     }
 }

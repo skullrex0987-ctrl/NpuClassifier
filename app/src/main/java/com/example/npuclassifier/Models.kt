@@ -19,7 +19,8 @@ data class SortItem(
     val ms: Long = 0,
     val note: String = "",
     val emb: FloatArray? = null,
-    val source: String = ""
+    val source: String = "",
+    val frameItems: List<SortItem>? = null
 )
 
 data class SortSettings(
@@ -28,19 +29,22 @@ data class SortSettings(
     val move: Boolean = false,
     val destRoot: String = "/storage/emulated/0/Pictures/Sorted",
     val excludes: String = "Sorted,.thumbnails,Android,.trash",
-    val frameIntervalSec: Int = 2,
-    val maxFrames: Int = 8,
     val backends: Set<Backend> = setOf(Backend.NPU),
     val catThreshold: Float = 0.80f,
     val catGap: Float = 0.03f,
     val useMine: Boolean = true,
     val useBuiltin: Boolean = true,
-    val model: String = "mnet"
+    val model: String = "mnet",
+    val videoDepth: Int = 1,
+    val videoMajority: Float = 0.5f,
+    val minFileKb: Int = 20
 )
 
 /** One file operation, kept so a batch can be undone. */
 data class Op(val src: String?, val dest: String, val moved: Boolean)
 
-data class Example(val name: String, val path: String?, val emb: FloatArray)
+data class Example(val name: String, val path: String?, val embs: Map<String, FloatArray>)
 
-data class Category(val name: String, val examples: List<Example>)
+data class Category(val name: String, val examples: List<Example>, val prompt: String = "")
+
+data class Candidate(val name: String, val source: String, val textEmb: FloatArray)
