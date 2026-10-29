@@ -14,7 +14,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 
 class SortViewModel(app: Application) : AndroidViewModel(app) {
-    private val ctx = app.applicationContext
+    val ctx = app.applicationContext
     private val prefs = Prefs(ctx)
     private val engine = SortEngine(ctx)
 

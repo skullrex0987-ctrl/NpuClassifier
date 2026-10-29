@@ -104,6 +104,13 @@ fun App(
             vm.message.value = null
         }
     }
+    val ctx = vm.ctx
+    LaunchedEffect(Unit) {
+        while (true) {
+            vm.items.value = Repo.page(ctx, Filter(), 0, 50)
+            kotlinx.coroutines.delay(1000)
+        }
+    }
     val reviewCount = list.count { it.status == Status.REVIEW }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
@@ -115,20 +122,18 @@ fun App(
                     icon = { BadgedBox(badge = { if (reviewCount > 0) Badge { Text("$reviewCount") } }) { Text("🔎") } },
                     label = { Text("Review") }
                 )
-                NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Text("⚙️") }, label = { Text("Settings") })
-                NavigationBarItem(
-                    selected = tab == 3, onClick = { tab = 3 },
-                    icon = { BadgedBox(badge = { if (cats.isNotEmpty()) Badge { Text("${cats.size}") } }) { Text("🗂") } },
-                    label = { Text("Categories") }
-                )
+                NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Text("🔍") }, label = { Text("Search") })
+                NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Text("📜") }, label = { Text("History") })
+                NavigationBarItem(selected = tab == 4, onClick = { tab = 4 }, icon = { Text("⋯") }, label = { Text("More") })
             }
         }
     ) { pad ->
         when (tab) {
             0 -> ScanScreen(vm, hasAll, onPermission, onPickFiles, onPickFolder, pad)
             1 -> ReviewScreen(vm, pad)
-            2 -> SettingsScreen(vm, pad)
-            else -> CategoriesScreen(vm, pad)
+            2 -> SearchPlaceholder(pad)
+            3 -> HistoryScreen(vm, pad)
+            else -> MoreScreen(vm, pad)
         }
     }
 }
