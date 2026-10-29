@@ -8,29 +8,24 @@ object Suggest {
         if (withEmb.isEmpty()) return emptyList()
 
         val clusters = mutableListOf<MutableList<SortItem>>()
-        val centroids = mutableListOf<FloatArray>()
+        // Raw sum per cluster; centroid = normalize(sum) == normalized average.
+        val sums = mutableListOf<FloatArray>()
 
         for (item in withEmb) {
             val emb = item.emb!!
             var placed = false
             for (i in clusters.indices) {
-                if (Emb.cosine(emb, centroids[i]) >= similarity) {
+                if (sums[i].size != emb.size) continue
+                if (Emb.cosine(emb, normalize(sums[i])) >= similarity) {
                     clusters[i].add(item)
-                    // update centroid
-                    val c = centroids[i]
-                    for (k in c.indices) c[k] = (c[k] * (clusters[i].size - 1) + emb[k]) / clusters[i].size
-                    // re-normalize
-                    var norm = 0f
-                    for (v in c) norm += v * v
-                    norm = kotlin.math.sqrt(norm.toDouble()).toFloat()
-                    if (norm > 0f) for (k in c.indices) c[k] /= norm
+                    for (k in sums[i].indices) sums[i][k] += emb[k]
                     placed = true
                     break
                 }
             }
             if (!placed) {
                 clusters.add(mutableListOf(item))
-                centroids.add(emb.copyOf())
+                sums.add(emb.copyOf())
             }
         }
 
@@ -43,5 +38,13 @@ object Suggest {
                 val suggestedName = names.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: "Cluster"
                 Cluster(suggestedName, members)
             }
+    }
+
+    private fun normalize(v: FloatArray): FloatArray {
+        var norm = 0f
+        for (x in v) norm += x * x
+        norm = kotlin.math.sqrt(norm.toDouble()).toFloat()
+        if (norm == 0f) return v
+        return FloatArray(v.size) { v[it] / norm }
     }
 }

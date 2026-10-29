@@ -41,7 +41,7 @@ object CategoryStore {
             for (ex in cat.examples) {
                 val e = JSONObject()
                 e.put("name", ex.name)
-                e.put("path", ex.path ?: "")
+                ex.path?.let { e.put("path", it) }
                 val buf = java.nio.ByteBuffer.allocate(ex.emb.size * 4).order(java.nio.ByteOrder.nativeOrder())
                 buf.asFloatBuffer().put(ex.emb)
                 e.put("emb", Base64.encodeToString(buf.array(), Base64.DEFAULT))

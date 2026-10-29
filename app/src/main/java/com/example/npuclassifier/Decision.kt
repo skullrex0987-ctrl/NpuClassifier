@@ -5,7 +5,9 @@ object Decision {
         if (cats.isEmpty()) return emptyList()
         val results = mutableListOf<Pair<String, Float>>()
         for (cat in cats) {
-            val sims = cat.examples.map { Emb.cosine(emb, it.emb) }
+            // Examples embedded by a different model can have another dimension; skip them rather
+            // than letting cosine() run off the end of the shorter vector.
+            val sims = cat.examples.filter { it.emb.size == emb.size }.map { Emb.cosine(emb, it.emb) }
             val score = if (sims.isEmpty()) 0f else sims.sortedDescending().take(3).average().toFloat()
             results.add(cat.name to score)
         }
@@ -20,11 +22,13 @@ object Decision {
                 val best = matches[0]
                 val second = matches.getOrElse(1) { "" to 0f }
                 if (best.second >= cfg.catThreshold && (best.second - second.second) >= cfg.catGap) {
+                    // NOTE: conf/gap are deliberately left untouched. They describe the ImageNet
+                    // rule and apply() is re-run on already-decided items (redecide), so overwriting
+                    // them here would leak a category score into the builtin branch next pass.
                     return item.copy(
                         label = best.first,
                         status = Status.AUTO,
-                        source = "mine",
-                        conf = best.second
+                        source = "mine"
                     )
                 }
             }

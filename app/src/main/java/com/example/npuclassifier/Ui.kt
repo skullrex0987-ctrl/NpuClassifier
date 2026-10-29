@@ -1,5 +1,8 @@
 package com.example.npuclassifier
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -27,6 +32,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -37,6 +43,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -77,6 +84,7 @@ fun AppTheme(content: @Composable () -> Unit) = MaterialTheme(colorScheme = Amol
 
 private fun pct(v: Float) = "${(v * 100).roundToInt()}%"
 
+/** Tabs: 0 Scan, 1 Review, 2 Settings, 3 Categories. */
 @Composable
 fun App(
     vm: SortViewModel,
@@ -89,6 +97,7 @@ fun App(
     val snack = remember { SnackbarHostState() }
     val msg by vm.message.collectAsStateWithLifecycle()
     val list by vm.items.collectAsStateWithLifecycle()
+    val cats by vm.categories.collectAsStateWithLifecycle()
     LaunchedEffect(msg) {
         msg?.let {
             snack.showSnackbar(it)
@@ -99,7 +108,7 @@ fun App(
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(containerColor = Color.Black) {
                 NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Text("📷") }, label = { Text("Scan") })
                 NavigationBarItem(
                     selected = tab == 1, onClick = { tab = 1 },
@@ -107,13 +116,19 @@ fun App(
                     label = { Text("Review") }
                 )
                 NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Text("⚙️") }, label = { Text("Settings") })
+                NavigationBarItem(
+                    selected = tab == 3, onClick = { tab = 3 },
+                    icon = { BadgedBox(badge = { if (cats.isNotEmpty()) Badge { Text("${cats.size}") } }) { Text("🗂") } },
+                    label = { Text("Categories") }
+                )
             }
         }
     ) { pad ->
         when (tab) {
             0 -> ScanScreen(vm, hasAll, onPermission, onPickFiles, onPickFolder, pad)
             1 -> ReviewScreen(vm, pad)
-            else -> SettingsScreen(vm, pad)
+            2 -> SettingsScreen(vm, pad)
+            else -> CategoriesScreen(vm, pad)
         }
     }
 }
@@ -133,6 +148,17 @@ private fun SliderRow(
 }
 
 @Composable
+private fun SwitchRow(title: String, hint: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+@Composable
 private fun Thumb(m: MediaItem, size: Dp) {
     Box(
         Modifier.size(size).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface),
@@ -145,6 +171,38 @@ private fun Thumb(m: MediaItem, size: Dp) {
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
+    }
+}
+
+/** A chip that is unmistakably on: filled primary, on-primary text, tick on the left. */
+@Composable
+private fun SelChip(selected: Boolean, label: String, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
+        leadingIcon = if (selected) {
+            { Text("✓", color = cs.onPrimary, fontWeight = FontWeight.Bold) }
+        } else null,
+        shape = RoundedCornerShape(50),
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = cs.primary,
+            selectedLabelColor = cs.onPrimary
+        )
+    )
+}
+
+/** Small tag showing where a label came from: the user's categories or ImageNet. */
+@Composable
+private fun SourceTag(source: String) {
+    if (source.isEmpty()) return
+    val cs = MaterialTheme.colorScheme
+    val mine = source == "mine"
+    val (txt, bg, fg) = if (mine) Triple("mine", cs.secondaryContainer, cs.onSecondaryContainer)
+    else Triple("built-in", cs.primaryContainer, cs.onPrimaryContainer)
+    Box(Modifier.clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 6.dp, vertical = 1.dp)) {
+        Text(txt, color = fg, style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -161,6 +219,9 @@ private fun ScanScreen(
     val auto = list.count { it.status == Status.AUTO }
     val review = list.count { it.status == Status.REVIEW }
     val pending = list.count { it.status == Status.PENDING || it.status == Status.ERROR }
+    // "after a scan" = at least one file has actually been classified.
+    val scanned = list.any { it.status != Status.PENDING && it.status != Status.ERROR }
+    var showSuggest by remember { mutableStateOf(false) }
     val stats = remember(list) {
         list.filter { it.backend != null && it.status != Status.ERROR }
             .groupBy { it.backend!! }
@@ -193,16 +254,12 @@ private fun ScanScreen(
                 Text("Run on", style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Backend.values().forEach { b ->
-                        FilterChip(
-                            selected = b in cfg.backends,
-                            onClick = {
-                                vm.updateSettings { s ->
-                                    val n = if (b in s.backends) s.backends - b else s.backends + b
-                                    if (n.isEmpty()) s else s.copy(backends = n)
-                                }
-                            },
-                            label = { Text(b.name) }
-                        )
+                        SelChip(selected = b in cfg.backends, label = b.name, onClick = {
+                            vm.updateSettings { s ->
+                                val n = if (b in s.backends) s.backends - b else s.backends + b
+                                if (n.isEmpty()) s else s.copy(backends = n)
+                            }
+                        })
                     }
                 }
                 if (cfg.backends.size > 1)
@@ -233,8 +290,21 @@ private fun ScanScreen(
                 TextButton(onClick = { vm.undo() }, enabled = canUndo) { Text("Undo") }
             }
         }
+        item {
+            FilledTonalButton(
+                onClick = { vm.suggest(); showSuggest = true },
+                enabled = scanned && !running,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Suggest categories") }
+            if (!scanned) Text(
+                "Run a scan first — suggestions come from the photos it looked at.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         items(list, key = { it.media.uri.toString() }) { si -> ItemRow(si) }
     }
+
+    if (showSuggest) SuggestDialog(vm) { showSuggest = false }
 }
 
 @Composable
@@ -245,7 +315,13 @@ private fun ItemRow(si: SortItem) {
             Thumb(si.media, 56.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(si.media.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        si.media.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false)
+                    )
+                    SourceTag(si.source)
+                }
                 val (txt, color) = when (si.status) {
                     Status.PENDING -> "Waiting" to cs.onSurfaceVariant
                     Status.AUTO -> "→ ${si.label} · ${pct(si.conf)}" to cs.secondary
@@ -271,8 +347,7 @@ private fun ReviewScreen(vm: SortViewModel, pad: PaddingValues) {
         item {
             Text("Review (${review.size})", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(
-                "The app wasn't sure about these. Tap a suggestion or type a folder name. " +
-                    "Learning from your choices arrives in the next update.",
+                "The app wasn't sure about these. Tap a suggestion or type a folder name.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -307,6 +382,66 @@ private fun ReviewScreen(vm: SortViewModel, pad: PaddingValues) {
 }
 
 @Composable
+private fun CategoriesScreen(vm: SortViewModel, pad: PaddingValues) {
+    val cats by vm.categories.collectAsStateWithLifecycle()
+    var showNew by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+    var pickedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    val pickExamples = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) pickedUris = uris
+    }
+
+    LazyColumn(
+        Modifier.fillMaxSize().padding(pad),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Categories (${cats.size})", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Button(onClick = { newName = ""; pickedUris = emptyList(); showNew = true }) { Text("New category") }
+            }
+        }
+        if (cats.isEmpty()) item {
+            Text("No categories yet. Create one or tap 'Suggest categories' on the Scan tab.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        items(cats, key = { it.name }) { cat ->
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(16.dp)) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(cat.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                        Text("${cat.examples.size} example${if (cat.examples.size != 1) "s" else ""}",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedButton(onClick = { vm.deleteCategory(cat.name) }) { Text("Delete") }
+                }
+            }
+        }
+    }
+
+    if (showNew) AlertDialog(
+        onDismissRequest = { showNew = false },
+        title = { Text("New category") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = newName, onValueChange = { newName = it }, label = { Text("Name") }, singleLine = true)
+                Button(onClick = { pickExamples.launch(arrayOf("image/*")) }) { Text("Pick example photos (${pickedUris.size})") }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                if (newName.isNotBlank() && pickedUris.isNotEmpty()) {
+                    vm.createCategory(newName.trim(), pickedUris)
+                    showNew = false
+                }
+            }, enabled = newName.isNotBlank() && pickedUris.isNotEmpty()) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = { showNew = false }) { Text("Cancel") } }
+    )
+}
+
+@Composable
 private fun SettingsScreen(vm: SortViewModel, pad: PaddingValues) {
     val cfg by vm.settings.collectAsStateWithLifecycle()
     Column(
@@ -324,8 +459,8 @@ private fun SettingsScreen(vm: SortViewModel, pad: PaddingValues) {
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("File action", style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = !cfg.move, onClick = { vm.updateSettings { it.copy(move = false) } }, label = { Text("Copy") })
-            FilterChip(selected = cfg.move, onClick = { vm.updateSettings { it.copy(move = true) } }, label = { Text("Move") })
+            SelChip(selected = !cfg.move, label = "Copy", onClick = { vm.updateSettings { it.copy(move = false) } })
+            SelChip(selected = cfg.move, label = "Move", onClick = { vm.updateSettings { it.copy(move = true) } })
         }
         Text("Move only works for files found via \"Pick folder\". Files from \"Pick files\" are always copied.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -343,5 +478,51 @@ private fun SettingsScreen(vm: SortViewModel, pad: PaddingValues) {
         SliderRow("Video: max frames", cfg.maxFrames.toFloat(), 2f..24f, "${cfg.maxFrames}", steps = 21) { v ->
             vm.updateSettings { it.copy(maxFrames = v.roundToInt()) }
         }
+
+        Text("Categories", style = MaterialTheme.typography.labelLarge)
+        SliderRow("Category match needed", cfg.catThreshold, 0.5f..0.99f, "≥ ${pct(cfg.catThreshold)}") { v ->
+            vm.updateSettings { it.copy(catThreshold = v) }
+        }
+        SliderRow("Category gap", cfg.catGap, 0f..0.2f, "≥ ${pct(cfg.catGap)}") { v ->
+            vm.updateSettings { it.copy(catGap = v) }
+        }
+        SwitchRow("Use my categories", "Sort using your taught categories (highest priority).",
+            cfg.useMine) { v -> vm.updateSettings { it.copy(useMine = v) } }
+        SwitchRow("Use built-in labels", "Fall back to ImageNet labels when no category matches.",
+            cfg.useBuiltin) { v -> vm.updateSettings { it.copy(useBuiltin = v) } }
     }
+}
+
+@Composable
+private fun SuggestDialog(vm: SortViewModel, onDismiss: () -> Unit) {
+    val clusters by vm.suggestions.collectAsStateWithLifecycle()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Suggested categories") },
+        text = {
+            if (clusters.isEmpty()) {
+                Text("No clusters found. Need more photos or lower similarity.")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    clusters.forEach { cl ->
+                        var name by remember(cl) { mutableStateOf(cl.suggestedName) }
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(12.dp)) {
+                            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                                Text("${cl.members.size} photos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    cl.members.take(4).forEach { m -> Thumb(m.media, 48.dp) }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { vm.approveCluster(cl, name.trim().ifBlank { cl.suggestedName }) }) { Text("Approve") }
+                                    OutlinedButton(onClick = { vm.dismissCluster(cl) }) { Text("Skip") }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
+    )
 }

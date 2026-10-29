@@ -28,6 +28,10 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
     val categories = MutableStateFlow<List<Category>>(emptyList())
     val suggestions = MutableStateFlow<List<Cluster>>(emptyList())
 
+    init {
+        categories.value = CategoryStore.load(ctx)
+    }
+
     private var index = HashMap<Uri, Int>()
     private var job: Job? = null
     private val history = mutableListOf<Triple<Uri, Op, Status>>()
@@ -35,14 +39,8 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
     fun updateSettings(f: (SortSettings) -> SortSettings) {
         settings.update(f)
         prefs.save(settings.value)
-        // Threshold / gap changes re-decide existing results instantly (no re-scan needed).
-        val cfg = settings.value
-        items.update { l ->
-            l.map {
-                if (it.status == Status.AUTO || it.status == Status.REVIEW)
-                    it.copy(status = SortEngine.decide(it.conf, it.gap, cfg)) else it
-            }
-        }
+        // Threshold / gap / category changes re-decide existing results instantly (no re-scan needed).
+        redecide()
     }
 
     private fun setItems(ms: List<MediaItem>) {
@@ -100,6 +98,10 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
                     },
                     onBackendError = { b, e -> message.value = "$b unavailable: $e" }
                 )
+                // The engine decides with built-in labels; categories (and clustering suggestions)
+                // are applied here so the result reflects what the user has taught the app.
+                redecide()
+                suggest()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -141,6 +143,20 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
                 history.add(Triple(si.media.uri, op, Status.REVIEW))
                 canUndo.value = true
                 replace(si.copy(status = Status.DONE, note = "-> $folder"))
+                // Learn from the assignment: add this file's embedding as an example.
+                val emb = si.emb
+                if (emb != null) {
+                    val cur = categories.value.toMutableList()
+                    val idx = cur.indexOfFirst { it.name == folder }
+                    if (idx >= 0) {
+                        cur[idx] = cur[idx].copy(examples = cur[idx].examples + Example(si.media.name, si.media.path, emb))
+                    } else {
+                        cur.add(Category(folder, listOf(Example(si.media.name, si.media.path, emb))))
+                    }
+                    categories.value = cur
+                    CategoryStore.save(ctx, cur)
+                    redecide()
+                }
             } catch (e: Exception) {
                 message.value = "Failed: ${e.message}"
             }
@@ -166,26 +182,98 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun createCategory(name: String, uris: List<Uri>) {
-        // Stub - Agent C will implement
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val ms = uris.map { Media.fromUri(ctx, it) }
+                val embs = engine.embedFiles(ms)
+                val examples = ms.zip(embs).mapNotNull { (m, e) ->
+                    if (e == null) null else Example(m.name, m.path, e)
+                }
+                if (examples.isEmpty()) {
+                    message.value = "Could not embed any of ${uris.size} files"
+                    return@launch
+                }
+                val cur = categories.value.toMutableList()
+                val idx = cur.indexOfFirst { it.name == name }
+                if (idx >= 0) {
+                    cur[idx] = cur[idx].copy(examples = cur[idx].examples + examples)
+                } else {
+                    cur.add(Category(name, examples))
+                }
+                categories.value = cur
+                CategoryStore.save(ctx, cur)
+                redecide()
+                message.value = "Category \"$name\" now has ${examples.size} example(s)"
+            } catch (e: Exception) {
+                message.value = "createCategory failed: ${e.message}"
+            }
+        }
     }
 
     fun deleteCategory(name: String) {
-        // Stub - Agent C will implement
+        viewModelScope.launch(Dispatchers.IO) {
+            val cur = categories.value.toMutableList()
+            val removed = cur.removeAll { it.name == name }
+            if (!removed) return@launch
+            categories.value = cur
+            CategoryStore.save(ctx, cur)
+            redecide()
+            message.value = "Deleted \"$name\""
+        }
     }
 
     fun suggest() {
-        // Stub - Agent C will implement
+        viewModelScope.launch(Dispatchers.Default) {
+            suggestions.value = Suggest.clusters(items.value)
+        }
     }
 
     fun approveCluster(cluster: Cluster, finalName: String) {
-        // Stub - Agent C will implement
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val members = cluster.members.take(20)
+                val examples = members.mapNotNull { si ->
+                    si.emb?.let { Example(si.media.name, si.media.path, it) }
+                }
+                if (examples.isEmpty()) {
+                    message.value = "Cluster has no embeddings"
+                    return@launch
+                }
+                val cur = categories.value.toMutableList()
+                val idx = cur.indexOfFirst { it.name == finalName }
+                if (idx >= 0) cur[idx] = cur[idx].copy(examples = cur[idx].examples + examples)
+                else cur.add(Category(finalName, examples))
+                categories.value = cur
+                CategoryStore.save(ctx, cur)
+
+                removeSuggestion(cluster)
+
+                redecide()
+                message.value = "Created \"$finalName\" from ${examples.size} examples"
+            } catch (e: Exception) {
+                message.value = "approveCluster failed: ${e.message}"
+            }
+        }
+    }
+
+    /** Removes a suggestion by identity, falling back to "same members" if the UI handed back a copy. */
+    private fun removeSuggestion(cluster: Cluster) {
+        val uris = cluster.members.map { it.media.uri }.toSet()
+        suggestions.update { list -> list.filter { it !== cluster && it.members.map { m -> m.media.uri }.toSet() != uris } }
     }
 
     fun dismissCluster(cluster: Cluster) {
-        // Stub - Agent C will implement
+        removeSuggestion(cluster)
     }
 
     private fun redecide() {
-        // Stub - Agent C will implement
+        val cfg = settings.value
+        val cats = categories.value
+        items.update { l ->
+            l.map {
+                if (it.status == Status.AUTO || it.status == Status.REVIEW)
+                    Decision.apply(it, cats, cfg) else it
+            }
+        }
     }
 }

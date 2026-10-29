@@ -43,7 +43,7 @@ class SortEngine(private val ctx: Context) {
         coroutineScope {
             backends.map { b ->
                 val ex = Executors.newSingleThreadExecutor()
-                val job = async(ex.asCoroutineDispatcher()) { worker(b, queue, cfg, onItem, onBackendError) }
+                val job = async(ex.asCoroutineDispatcher()) { worker(b, queue, cfg, cats, onItem, onBackendError) }
                 job.invokeOnCompletion { ex.shutdown() }
                 job
             }.awaitAll()
@@ -52,7 +52,7 @@ class SortEngine(private val ctx: Context) {
         if (queue.isNotEmpty() && Backend.CPU !in backends) {
             val ex = Executors.newSingleThreadExecutor()
             try {
-                withContext(ex.asCoroutineDispatcher()) { worker(Backend.CPU, queue, cfg, onItem, onBackendError) }
+                withContext(ex.asCoroutineDispatcher()) { worker(Backend.CPU, queue, cfg, cats, onItem, onBackendError) }
             } finally {
                 ex.shutdown()
             }
@@ -63,6 +63,7 @@ class SortEngine(private val ctx: Context) {
         b: Backend,
         queue: ConcurrentLinkedQueue<MediaItem>,
         cfg: SortSettings,
+        cats: List<Category>,
         onItem: (SortItem) -> Unit,
         onErr: (Backend, String) -> Unit
     ) {
@@ -77,7 +78,7 @@ class SortEngine(private val ctx: Context) {
                 val m = queue.poll() ?: break
                 val t0 = SystemClock.elapsedRealtime()
                 val si = try {
-                    process(clf, m, cfg, b)
+                    process(clf, m, cfg, cats, b)
                 } catch (e: Throwable) {
                     SortItem(m, status = Status.ERROR, note = e.message ?: "error", backend = b)
                 }
@@ -88,16 +89,25 @@ class SortEngine(private val ctx: Context) {
         }
     }
 
-    private fun process(clf: Classifier, m: MediaItem, cfg: SortSettings, b: Backend): SortItem {
+    private fun process(
+        clf: Classifier, m: MediaItem, cfg: SortSettings, cats: List<Category>, b: Backend
+    ): SortItem {
         val scores = if (m.isVideo) videoScores(clf, m, cfg) else clf.scores(decode(m))
         val order = scores.indices.sortedByDescending { scores[it] }.take(3)
         val top = order.map { (clf.labels.getOrNull(it) ?: "class $it") to scores[it] }
         val conf = top[0].second
         val gap = conf - (top.getOrNull(1)?.second ?: 0f)
-        return SortItem(
-            media = m, label = prettyLabel(top[0].first), conf = conf, gap = gap, top = top,
-            status = decide(conf, gap, cfg), backend = b
+        val item = SortItem(
+            media = m,
+            label = prettyLabel(top[0].first),
+            conf = conf,
+            gap = gap,
+            top = top,
+            status = decide(conf, gap, cfg),
+            backend = b,
+            emb = Emb.fromScores(scores)
         )
+        return Decision.apply(item, cats, cfg)
     }
 
     private fun decode(m: MediaItem): Bitmap {
@@ -105,11 +115,13 @@ class SortEngine(private val ctx: Context) {
         else ImageDecoder.createSource(ctx.contentResolver, m.uri)
         return ImageDecoder.decodeBitmap(src) { dec, info, _ ->
             dec.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-            val mx = maxOf(info.size.width, info.size.height)
-            if (mx > 512) { // classifier input is small; decoding smaller is much faster
-                val f = 512f / mx
-                dec.setTargetSize(maxOf(1, (info.size.width * f).toInt()), maxOf(1, (info.size.height * f).toInt()))
-            }
+            val w = info.size.width
+            val h = info.size.height
+            val minSide = minOf(w, h)
+            // Biggest power of 2 (1,2,4,8...) such that minSide / n >= 256.
+            var n = 1
+            while (minSide / (n * 2) >= 256) n *= 2
+            if (n > 1) dec.setTargetSampleSize(n)
         }
     }
 
@@ -139,9 +151,31 @@ class SortEngine(private val ctx: Context) {
         }
     }
 
-    /** Classify with NPU (fallback CPU), return fingerprints. */
+    /**
+     * Classify each item with NPU (falling back to CPU if NPU is unavailable) and return
+     * normalized fingerprints. Failed items yield null so callers can skip them.
+     */
     suspend fun embedFiles(items: List<MediaItem>): List<FloatArray?> {
-        // Stub - Agent A will implement
-        return items.map { null }
+        val clf = try {
+            Classifier(ctx, Backend.NPU)
+        } catch (e: Throwable) {
+            try {
+                Classifier(ctx, Backend.CPU)
+            } catch (e2: Throwable) {
+                return items.map { null }
+            }
+        }
+        return try {
+            items.map { m ->
+                try {
+                    val scores = if (m.isVideo) videoScores(clf, m, SortSettings()) else clf.scores(decode(m))
+                    Emb.fromScores(scores)
+                } catch (e: Throwable) {
+                    null
+                }
+            }
+        } finally {
+            clf.close()
+        }
     }
 }
