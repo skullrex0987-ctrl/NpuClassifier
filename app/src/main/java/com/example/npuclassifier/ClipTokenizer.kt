@@ -128,12 +128,11 @@ object ClipTokenizer {
             if (bestIdx == -1) break
             // merge
             val merged = wordChars[bestIdx] + wordChars[bestIdx + 1]
-            wordChars = wordChars.subList(0, bestIdx).toMutableList() +
-                    mutableListOf(merged) +
-                    wordChars.subList(bestIdx + 2, wordChars.size).toMutableList()
+            val newChars = wordChars.subList(0, bestIdx).toMutableList()
+            newChars.add(merged)
+            newChars.addAll(wordChars.subList(bestIdx + 2, wordChars.size))
+            wordChars = newChars
         }
         return wordChars
     }
 }
-XML
-echo "Created ClipTokenizer.kt"

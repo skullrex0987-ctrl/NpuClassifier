@@ -33,7 +33,7 @@ class ClipClassifier(context: Context) {
         val input = preprocessImage(bitmap)
         val tensor = OnnxTensor.createTensor(env, input, longArrayOf(1, 3, 224, 224))
         val result = visionSession.run(mapOf(visionInputName to tensor))
-        val output = result.get(visionOutputName)
+        val output = result.get(visionOutputName).get()
         val raw = when (val v = output.value) {
             is Array<*> -> {
                 val arr = v[0] as FloatArray
@@ -52,7 +52,7 @@ class ClipClassifier(context: Context) {
         val ids = ClipTokenizer.encode(text)
         val input = OnnxTensor.createTensor(env, java.nio.LongBuffer.wrap(ids), longArrayOf(1, 77))
         val result = textSession.run(mapOf(textInputName to input))
-        val output = result.get(textOutputName)
+        val output = result.get(textOutputName).get()
         val raw = when (val v = output.value) {
             is Array<*> -> {
                 val arr = v[0] as FloatArray
@@ -115,5 +115,3 @@ class ClipClassifier(context: Context) {
         textSession.close()
     }
 }
-XML
-echo "Created ClipClassifier.kt"

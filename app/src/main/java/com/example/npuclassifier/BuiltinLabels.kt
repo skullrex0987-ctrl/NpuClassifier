@@ -13,5 +13,3 @@ object BuiltinLabels {
         "toy", "jewelry", "medicine", "tools"
     )
 }
-XML
-echo "Created BuiltinLabels.kt"

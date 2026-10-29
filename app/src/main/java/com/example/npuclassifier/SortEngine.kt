@@ -238,5 +238,3 @@ class SortEngine(private val ctx: Context) {
         clipClassifier = null
     }
 }
-XML
-echo "Updated SortEngine.kt"

@@ -152,5 +152,3 @@ object Decision {
         )
     }
 }
-XML
-echo "Updated Decision.kt"
