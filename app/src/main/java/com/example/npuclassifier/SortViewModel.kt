@@ -1,6 +1,7 @@
 package com.example.npuclassifier
 
 import android.app.Application
+import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
@@ -185,7 +186,26 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val ms = uris.map { Media.fromUri(ctx, it) }
-                val embs = engine.embedFiles(ms)
+                val embs = if (settings.value.model == "clip") {
+                    val clip = ClipClassifier(ctx)
+                    try {
+                        ms.map { m ->
+                            try {
+                                val bmp = if (m.isVideo) null else {
+                                    // decode
+                                    val src = if (m.path != null) ImageDecoder.createSource(File(m.path))
+                                    else ImageDecoder.createSource(ctx.contentResolver, m.uri)
+                                    ImageDecoder.decodeBitmap(src)
+                                }
+                                bmp?.let { clip.imageEmbed(it) }
+                            } catch (e: Exception) { null }
+                        }
+                    } finally {
+                        clip.close()
+                    }
+                } else {
+                    engine.embedFiles(ms)
+                }
                 val examples = ms.zip(embs).mapNotNull { (m, e) ->
                     if (e == null) null else Example(m.name, m.path, e)
                 }

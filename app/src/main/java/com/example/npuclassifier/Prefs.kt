@@ -23,7 +23,8 @@ class Prefs(ctx: Context) {
             catThreshold = p.getFloat("catThr", d.catThreshold),
             catGap = p.getFloat("catGap", d.catGap),
             useMine = p.getBoolean("useMine", d.useMine),
-            useBuiltin = p.getBoolean("useBuiltin", d.useBuiltin)
+            useBuiltin = p.getBoolean("useBuiltin", d.useBuiltin),
+            model = p.getString("model", d.model) ?: d.model
         )
     }
 
@@ -41,6 +42,7 @@ class Prefs(ctx: Context) {
             .putFloat("catGap", s.catGap)
             .putBoolean("useMine", s.useMine)
             .putBoolean("useBuiltin", s.useBuiltin)
+            .putString("model", s.model)
             .apply()
     }
 }

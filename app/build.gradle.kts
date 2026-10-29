@@ -15,6 +15,7 @@ android {
     }
     // keep model files uncompressed so they can be memory-mapped
     androidResources { noCompress += "tflite" }
+    androidResources { noCompress += "onnx" }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -36,4 +37,5 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite:2.16.1")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.16.1")
     implementation("org.tensorflow:tensorflow-lite-gpu-api:2.16.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 }

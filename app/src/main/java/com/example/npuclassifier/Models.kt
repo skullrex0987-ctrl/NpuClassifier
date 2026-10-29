@@ -34,7 +34,8 @@ data class SortSettings(
     val catThreshold: Float = 0.80f,
     val catGap: Float = 0.03f,
     val useMine: Boolean = true,
-    val useBuiltin: Boolean = true
+    val useBuiltin: Boolean = true,
+    val model: String = "mnet"
 )
 
 /** One file operation, kept so a batch can be undone. */

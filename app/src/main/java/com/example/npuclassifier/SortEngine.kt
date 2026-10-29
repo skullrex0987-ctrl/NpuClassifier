@@ -27,6 +27,13 @@ class SortEngine(private val ctx: Context) {
                 .joinToString(" ") { w -> w.replaceFirstChar { it.uppercase() } }
     }
 
+    private var clipClassifier: ClipClassifier? = null
+
+    private fun getClip(): ClipClassifier {
+        if (clipClassifier == null) clipClassifier = ClipClassifier(ctx)
+        return clipClassifier!!
+    }
+
     /**
      * Processes [items] on every selected backend IN PARALLEL: each backend gets its own
      * single thread + interpreter and pulls from one shared queue, so faster backends do more.
@@ -92,6 +99,10 @@ class SortEngine(private val ctx: Context) {
     private fun process(
         clf: Classifier, m: MediaItem, cfg: SortSettings, cats: List<Category>, b: Backend
     ): SortItem {
+        if (cfg.model == "clip") {
+            return processClip(m, cfg, cats, b)
+        }
+        // MobileNet (Phase 2)
         val scores = if (m.isVideo) videoScores(clf, m, cfg) else clf.scores(decode(m))
         val order = scores.indices.sortedByDescending { scores[it] }.take(3)
         val top = order.map { (clf.labels.getOrNull(it) ?: "class $it") to scores[it] }
@@ -110,6 +121,47 @@ class SortEngine(private val ctx: Context) {
         return Decision.apply(item, cats, cfg)
     }
 
+    private fun processClip(m: MediaItem, cfg: SortSettings, cats: List<Category>, b: Backend): SortItem {
+        val clip = getClip()
+        val bitmap = if (m.isVideo) {
+            // Use middle frame for video
+            val r = MediaMetadataRetriever()
+            try {
+                if (m.path != null) r.setDataSource(m.path) else r.setDataSource(ctx, m.uri)
+                val durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                r.getFrameAtTime(durMs * 500L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            } finally {
+                r.release()
+            }
+        } else {
+            decode(m)
+        } ?: return SortItem(m, status = Status.ERROR, note = "Could not decode", backend = b)
+
+        val imgEmb = clip.imageEmbed(bitmap)
+        if (m.isVideo) bitmap.recycle()
+
+        // Cache text embeddings for all candidate labels
+        val candidateLabels = mutableSetOf<String>()
+        if (cfg.useMine) {
+            for (cat in cats) candidateLabels.add(cat.name)
+        }
+        if (cfg.useBuiltin) {
+            candidateLabels.addAll(BuiltinLabels.labels)
+        }
+        for (label in candidateLabels) {
+            if (!Decision.hasClipText(label)) {
+                Decision.cacheClipText(label, clip.textEmbed(label))
+            }
+        }
+
+        val item = SortItem(
+            media = m,
+            emb = imgEmb,
+            backend = b
+        )
+        return Decision.apply(item, cats, cfg)
+    }
+
     private fun decode(m: MediaItem): Bitmap {
         val src = if (m.path != null) ImageDecoder.createSource(File(m.path))
         else ImageDecoder.createSource(ctx.contentResolver, m.uri)
@@ -118,21 +170,22 @@ class SortEngine(private val ctx: Context) {
             val w = info.size.width
             val h = info.size.height
             val minSide = minOf(w, h)
-            // Biggest power of 2 (1,2,4,8...) such that minSide / n >= 256.
             var n = 1
             while (minSide / (n * 2) >= 256) n *= 2
             if (n > 1) dec.setTargetSampleSize(n)
         }
     }
 
-    /** Samples frames evenly, classifies each, and averages the scores (a "vote"). */
+    /** Samples frames evenly across the ENTIRE video duration. */
     private fun videoScores(clf: Classifier, m: MediaItem, cfg: SortSettings): FloatArray {
         val r = MediaMetadataRetriever()
         try {
             if (m.path != null) r.setDataSource(m.path) else r.setDataSource(ctx, m.uri)
             val durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            // Sample more frames for longer videos to cover the whole duration
+            val maxFrames = cfg.maxFrames.coerceAtLeast(1)
             val byInterval = (durMs / (cfg.frameIntervalSec * 1000L)).toInt().coerceAtLeast(1)
-            val n = minOf(cfg.maxFrames, byInterval)
+            val n = minOf(maxFrames, byInterval).coerceAtLeast(1)
             var acc: FloatArray? = null
             var cnt = 0
             for (i in 0 until n) {
@@ -142,6 +195,7 @@ class SortEngine(private val ctx: Context) {
                 if (acc == null) acc = FloatArray(s.size)
                 for (k in s.indices) acc[k] += s[k]
                 cnt++
+                bmp.recycle()
             }
             val a = requireNotNull(acc) { "Could not read video frames" }
             for (k in a.indices) a[k] = a[k] / cnt
@@ -178,4 +232,11 @@ class SortEngine(private val ctx: Context) {
             clf.close()
         }
     }
+
+    fun close() {
+        clipClassifier?.close()
+        clipClassifier = null
+    }
 }
+XML
+echo "Updated SortEngine.kt"

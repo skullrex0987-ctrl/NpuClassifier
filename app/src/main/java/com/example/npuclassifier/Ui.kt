@@ -449,6 +449,13 @@ private fun SettingsScreen(vm: SortViewModel, pad: PaddingValues) {
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Model", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SelChip(selected = cfg.model == "mnet", label = "MobileNet (fast)", onClick = { vm.updateSettings { it.copy(model = "mnet") } })
+            SelChip(selected = cfg.model == "clip", label = "CLIP (smart)", onClick = { vm.updateSettings { it.copy(model = "clip") } })
+        }
+        Text("MobileNet: fast, bundled, ImageNet labels. CLIP: slower, understands words (zero-shot).",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         SliderRow("Confidence needed", cfg.threshold, 0.1f..0.99f, "≥ ${pct(cfg.threshold)}") { v ->
             vm.updateSettings { it.copy(threshold = v) }
         }
