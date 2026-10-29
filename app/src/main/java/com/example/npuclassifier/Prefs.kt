@@ -25,7 +25,15 @@ class Prefs(ctx: Context) {
             model = p.getString("model", d.model) ?: d.model,
             videoDepth = p.getInt("videoDepth", d.videoDepth),
             videoMajority = p.getFloat("videoMajority", d.videoMajority),
-            minFileKb = p.getInt("minFileKb", d.minFileKb)
+            minFileKb = p.getInt("minFileKb", d.minFileKb),
+            scanMode = p.getString("scanMode", d.scanMode) ?: d.scanMode,
+            ocrMode = p.getString("ocrMode", d.ocrMode) ?: d.ocrMode,
+            ocrHindi = p.getString("ocrHindi", d.ocrHindi) ?: d.ocrHindi,
+            tagsOn = p.getBoolean("tagsOn", d.tagsOn),
+            searchModel = p.getString("searchModel", d.searchModel) ?: d.searchModel,
+            facesOn = p.getBoolean("facesOn", d.facesOn),
+            faceMatch = p.getFloat("faceMatch", d.faceMatch),
+            indexWhileCharging = p.getBoolean("indexWhileCharging", d.indexWhileCharging)
         )
     }
 
@@ -45,6 +53,14 @@ class Prefs(ctx: Context) {
             .putInt("videoDepth", s.videoDepth)
             .putFloat("videoMajority", s.videoMajority)
             .putInt("minFileKb", s.minFileKb)
+            .putString("scanMode", s.scanMode)
+            .putString("ocrMode", s.ocrMode)
+            .putString("ocrHindi", s.ocrHindi)
+            .putBoolean("tagsOn", s.tagsOn)
+            .putString("searchModel", s.searchModel)
+            .putBoolean("facesOn", s.facesOn)
+            .putFloat("faceMatch", s.faceMatch)
+            .putBoolean("indexWhileCharging", s.indexWhileCharging)
             .apply()
     }
 }

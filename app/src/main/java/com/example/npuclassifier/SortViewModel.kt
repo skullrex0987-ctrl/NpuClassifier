@@ -78,7 +78,7 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearResults() {
-        items.update { l -> l.map { SortItem(it.media) } }
+        items.update { l -> l.map { SortItem(media = it.media) } }
         message.value = "Results cleared"
     }
 
@@ -212,7 +212,7 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun setItems(ms: List<MediaItem>) {
         index = HashMap<Uri, Int>().also { m -> ms.forEachIndexed { i, x -> m[x.uri] = i } }
-        items.value = ms.map { SortItem(it) }
+        items.value = ms.map { SortItem(media = it) }
         history.clear()
         canUndo.value = false
         progress.value = 0 to ms.size
@@ -292,7 +292,7 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
             var failed = 0
             for (si in items.value.filter { it.status == Status.AUTO }) {
                 try {
-                    val op = FileOps.place(ctx, si.media, si.label, cfg)
+                    val op = FileOps.place(ctx, si.media, si.label, cfg).firstOrNull() ?: Op(null, "", false)
                     history.add(Triple(si.media.uri, op, Status.AUTO))
                     replace(si.copy(status = Status.DONE, note = "-> ${si.label}"))
                 } catch (e: Exception) {
@@ -308,7 +308,7 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
     fun assign(si: SortItem, folder: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val op = FileOps.place(ctx, si.media, folder, settings.value)
+                val op = FileOps.place(ctx, si.media, folder, settings.value).firstOrNull() ?: Op(null, "", false)
                 history.add(Triple(si.media.uri, op, Status.REVIEW))
                 canUndo.value = true
                 replace(si.copy(status = Status.DONE, note = "-> $folder"))

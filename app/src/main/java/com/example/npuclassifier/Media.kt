@@ -23,8 +23,8 @@ object Media {
             .forEach { f ->
                 val ext = f.extension.lowercase()
                 when {
-                    ext in IMG -> out.add(MediaItem(Uri.fromFile(f), f.absolutePath, f.name, false))
-                    ext in VID -> out.add(MediaItem(Uri.fromFile(f), f.absolutePath, f.name, true))
+                    ext in IMG -> out.add(MediaItem(uri = Uri.fromFile(f), path = f.absolutePath, name = f.name, isVideo = false))
+                    ext in VID -> out.add(MediaItem(uri = Uri.fromFile(f), path = f.absolutePath, name = f.name, isVideo = true))
                 }
             }
         return out
@@ -36,7 +36,7 @@ object Media {
             if (c.moveToFirst()) c.getString(0)?.let { name = it }
         }
         val mime = ctx.contentResolver.getType(uri) ?: ""
-        return MediaItem(uri, null, name, mime.startsWith("video"))
+        return MediaItem(uri = uri, path = null, name = name, isVideo = mime.startsWith("video"))
     }
 
     /** content://...externalstorage.../tree/primary:DCIM/Camera -> /storage/emulated/0/DCIM/Camera */

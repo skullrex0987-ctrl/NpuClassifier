@@ -76,7 +76,7 @@ class SortEngine(private val ctx: Context) {
                 val si = try {
                     processItem(m, cfg, cats, b)
                 } catch (e: Throwable) {
-                    SortItem(m, status = Status.ERROR, note = e.message ?: "error", backend = b)
+                    SortItem(media = m, status = Status.ERROR, note = e.message ?: "error", backend = b)
                 }
                 onItem(si.copy(ms = SystemClock.elapsedRealtime() - t0))
             }
@@ -98,7 +98,7 @@ class SortEngine(private val ctx: Context) {
 
         val sizeKb = m.path?.let { File(it).length() / 1024 } ?: 0L
         if (sizeKb < cfg.minFileKb) {
-            return SortItem(m, status = Status.REVIEW, note = "too small", backend = b)
+            return SortItem(media = m, status = Status.REVIEW, note = "too small", backend = b)
         }
 
         val item = processImage(null, m, cfg, cats, b, isFrame = false)
@@ -263,5 +263,9 @@ class SortEngine(private val ctx: Context) {
             }
         }
         return result
+    }
+
+    suspend fun runQueue(ctx: Context, cfg: SortSettings, cats: List<Category>) {
+        // Stub: implemented in CP1 Agent B
     }
 }
