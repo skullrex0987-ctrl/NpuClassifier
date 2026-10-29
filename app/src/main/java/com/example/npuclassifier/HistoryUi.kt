@@ -1,24 +1,31 @@
 package com.example.npuclassifier
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.material3.AlertDialog
-import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.FileProvider
-import java.io.File
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.io.File
 
 @Composable
 fun SearchPlaceholder(pad: PaddingValues) {
@@ -83,40 +90,15 @@ fun HistoryScreen(vm: SortViewModel, pad: PaddingValues) {
 }
 
 @Composable
-fun DiagnosticsScreen(vm: SortViewModel, pad: PaddingValues, onBack: (() -> Unit)? = null) {
-    val lines = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(AppLog.tail(300)) }
-    Column(Modifier.fillMaxSize().padding(pad).padding(16.dp)) {
-        onBack?.let { androidx.compose.material3.TextButton(onClick = it) { Text("← Back") } }
-        Text("Diagnostics", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
-        androidx.compose.material3.Button(onClick = { lines.value = AppLog.tail(300) }) { Text("Refresh") }
-        androidx.compose.material3.Button(onClick = { AppLog.tail(300).forEach { } }) { Text("Copy") }
-        androidx.compose.material3.Button(onClick = { AppLog.tail(0); lines.value = emptyList() }) { Text("Clear log") }
-        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp)) {
-            items(lines.value) { l -> Text(l, style = androidx.compose.material3.MaterialTheme.typography.bodySmall) }
-        }
-    }
-}
-
-@Composable
-fun SetupGuideScreen(vm: SortViewModel, pad: PaddingValues, onBack: (() -> Unit)? = null) {
-    Column(Modifier.fillMaxSize().padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        onBack?.let { androidx.compose.material3.TextButton(onClick = it) { Text("← Back") } }
-        Text("Background setup (Xiaomi/HyperOS)", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
-        Text("1. Ignore battery optimization")
-        Text("2. Open Xiaomi autostart")
-        Text("3. Set Battery saver to 'No restrictions' and lock app in Recents")
-    }
-}
-@Composable
 fun MoreScreen(vm: SortViewModel, pad: PaddingValues) {
-    var sub by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("menu") }
+    var sub by remember { mutableStateOf("menu") }
     when (sub) {
         "categories" -> Column(Modifier.fillMaxSize()) {
-            androidx.compose.material3.TextButton(onClick = { sub = "menu" }) { Text("← Back") }
+            TextButton(onClick = { sub = "menu" }) { Text("← Back") }
             CategoriesScreen(vm, pad)
         }
         "settings" -> Column(Modifier.fillMaxSize()) {
-            androidx.compose.material3.TextButton(onClick = { sub = "menu" }) { Text("← Back") }
+            TextButton(onClick = { sub = "menu" }) { Text("← Back") }
             SettingsScreen(vm, pad)
         }
         "diagnostics" -> DiagnosticsScreen(vm, pad, onBack = { sub = "menu" })
@@ -129,5 +111,31 @@ fun MoreScreen(vm: SortViewModel, pad: PaddingValues) {
             androidx.compose.material3.Button(onClick = { sub = "setup" }, modifier = Modifier.fillMaxWidth()) { Text("Background setup guide") }
             Text("People (coming soon)", color = androidx.compose.ui.graphics.Color.Gray)
         }
+    }
+}
+
+@Composable
+fun DiagnosticsScreen(vm: SortViewModel, pad: PaddingValues, onBack: (() -> Unit)? = null) {
+    val lines = remember { mutableStateOf(AppLog.tail(300)) }
+    Column(Modifier.fillMaxSize().padding(pad).padding(16.dp)) {
+        onBack?.let { TextButton(onClick = it) { Text("← Back") } }
+        Text("Diagnostics", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
+        androidx.compose.material3.Button(onClick = { lines.value = AppLog.tail(300) }) { Text("Refresh") }
+        androidx.compose.material3.Button(onClick = { }) { Text("Copy") }
+        androidx.compose.material3.Button(onClick = { lines.value = emptyList() }) { Text("Clear log") }
+        LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp)) {
+            items(lines.value) { l -> Text(l, style = androidx.compose.material3.MaterialTheme.typography.bodySmall) }
+        }
+    }
+}
+
+@Composable
+fun SetupGuideScreen(vm: SortViewModel, pad: PaddingValues, onBack: (() -> Unit)? = null) {
+    Column(Modifier.fillMaxSize().padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        onBack?.let { TextButton(onClick = it) { Text("← Back") } }
+        Text("Background setup (Xiaomi/HyperOS)", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
+        Text("1. Ignore battery optimization")
+        Text("2. Open Xiaomi autostart")
+        Text("3. Set Battery saver to 'No restrictions' and lock app in Recents")
     }
 }
