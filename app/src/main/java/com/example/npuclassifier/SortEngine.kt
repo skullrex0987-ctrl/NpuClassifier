@@ -131,7 +131,7 @@ class SortEngine(private val ctx: Context) {
                 cnt++
             }
             val a = requireNotNull(acc) { "Could not read video frames" }
-            for (k in a.indices) a[k] /= cnt
+            for (k in a.indices) a[k] = a[k] / cnt
             return a
         } finally {
             r.release()
