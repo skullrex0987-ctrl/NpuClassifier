@@ -268,8 +268,31 @@ class SortEngine(private val ctx: Context) {
     suspend fun runQueue(ctx: Context, cfg: SortSettings, cats: List<Category>) {
         AppLog.init(ctx)
         val engine = this
-        // Stage 1: PENDING files
+        val t0 = System.currentTimeMillis()
+        var lastStateUpdate = 0L
+        fun maybeUpdateState(done: Int, total: Int, stage: String) {
+            val now = System.currentTimeMillis()
+            if (now - lastStateUpdate >= 300) {
+                lastStateUpdate = now
+                val elapsed = (now - t0) / 1000f
+                val perSec = if (elapsed > 0) done / elapsed else 0f
+                ScanController.update(ScanState(running = true, stage = stage, done = done, total = total, perSec = perSec, message = "$stage $done/$total"))
+            }
+        }
+        // Collect all pending ids first for total count
+        // Stage 1
         if (cfg.scanMode != "smart") {
+            val stage = "fast"
+            var total = Repo.counts(ctx).pending + Repo.counts(ctx).needsSmart
+            if (total == 0) total = 1
+            var done = 0
+            val sink = mutableListOf<SortItem>()
+            fun flushSink() {
+                if (sink.isNotEmpty()) {
+                    Repo.saveResults(ctx, sink.toList())
+                    sink.clear()
+                }
+            }
             while (true) {
                 val batch = Repo.nextPending(ctx, Status.PENDING, 50)
                 if (batch.isEmpty()) break
@@ -281,29 +304,43 @@ class SortEngine(private val ctx: Context) {
                         } else {
                             if (si.status == Status.REVIEW) Status.NEEDS_SMART else si.status
                         }
-                        Repo.saveResults(ctx, listOf(si.copy(status = status)))
+                        val item = si.copy(status = status)
+                        sink.add(item)
                         val bmp = try { decode(m) } catch (e: Exception) { null }
                         if (bmp != null) {
                             Thumbs.save(ctx, m.id, bmp)
                             bmp.recycle()
                         }
+                        done++
+                        maybeUpdateState(done, total, stage)
+                        if (sink.size >= 100) flushSink()
                     } catch (e: Exception) {
                         AppLog.e("SortEngine", "stage1 failed ${m.name}", e)
-                        Repo.saveResults(ctx, listOf(SortItem(media = m, status = Status.ERROR, note = e.message ?: "error")))
+                        sink.add(SortItem(media = m, status = Status.ERROR, note = e.message ?: "error"))
                     }
                 }
+                flushSink()
             }
+            flushSink()
         } else {
-            // smart: mark all PENDING as NEEDS_SMART
             val d = Db.get(ctx)
             d.execSQL("UPDATE media SET status='NEEDS_SMART' WHERE status='PENDING'")
         }
-        // Stage 2: NEEDS_SMART files
+        // Stage 2
         val smartEmbedder: Embedder? = when (cfg.model) {
             "clip" -> ClipEmbedder(ctx, Backend.CPU)
             else -> null
         }
         try {
+            val total = Repo.counts(ctx).needsSmart.coerceAtLeast(1)
+            var done = 0
+            val sink = mutableListOf<SortItem>()
+            fun flushSink2() {
+                if (sink.isNotEmpty()) {
+                    Repo.saveResults(ctx, sink.toList())
+                    sink.clear()
+                }
+            }
             while (true) {
                 val batch = Repo.nextPending(ctx, Status.NEEDS_SMART, 50)
                 if (batch.isEmpty()) break
@@ -315,13 +352,19 @@ class SortEngine(private val ctx: Context) {
                         bmp.recycle()
                         val si = SortItem(media = m, emb = emb, backend = Backend.CPU, thumb = thumbPath)
                         val decided = Decision.apply(si, cats, cfg, engine.candidates(cfg, cats))
-                        Repo.saveResults(ctx, listOf(decided.copy(status = if (decided.status == Status.REVIEW) Status.REVIEW else decided.status)))
+                        val status = if (decided.status == Status.REVIEW) Status.REVIEW else decided.status
+                        sink.add(decided.copy(status = status))
+                        done++
+                        maybeUpdateState(done, total, "smart")
+                        if (sink.size >= 100) flushSink2()
                     } catch (e: Exception) {
                         AppLog.e("SortEngine", "stage2 failed ${m.name}", e)
-                        Repo.saveResults(ctx, listOf(SortItem(media = m, status = Status.ERROR, note = e.message ?: "error")))
+                        sink.add(SortItem(media = m, status = Status.ERROR, note = e.message ?: "error"))
                     }
                 }
+                flushSink2()
             }
+            flushSink2()
         } finally {
             smartEmbedder?.close()
         }
