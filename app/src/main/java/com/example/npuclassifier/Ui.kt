@@ -328,6 +328,8 @@ private fun ItemRow(si: SortItem) {
                     Status.REVIEW -> "Unsure: ${si.label} · ${pct(si.conf)}" to cs.primary
                     Status.DONE -> "Done ${si.note}" to cs.secondary
                     Status.ERROR -> "Error: ${si.note}" to cs.error
+                    Status.NEEDS_SMART -> "Needs smart" to cs.onSurfaceVariant
+                    Status.MISSING -> "Missing" to cs.error
                 }
                 Text(txt, color = color, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
