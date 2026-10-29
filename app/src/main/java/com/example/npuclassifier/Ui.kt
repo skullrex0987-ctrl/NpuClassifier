@@ -389,7 +389,7 @@ private fun ReviewScreen(vm: SortViewModel, pad: PaddingValues) {
 }
 
 @Composable
-private fun CategoriesScreen(vm: SortViewModel, pad: PaddingValues, onBack: (() -> Unit)? = null) {
+fun CategoriesScreen(vm: SortViewModel, pad: PaddingValues, onBack: (() -> Unit)? = null) {
     val cats by vm.categories.collectAsStateWithLifecycle()
     var showNew by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
@@ -449,7 +449,7 @@ private fun CategoriesScreen(vm: SortViewModel, pad: PaddingValues, onBack: (() 
 }
 
 @Composable
-private fun SettingsScreen(vm: SortViewModel, pad: PaddingValues, onBack: (() -> Unit)? = null) {
+fun SettingsScreen(vm: SortViewModel, pad: PaddingValues, onBack: (() -> Unit)? = null) {
     val cfg by vm.settings.collectAsStateWithLifecycle()
     Column(
         Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp),
