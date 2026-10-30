@@ -522,6 +522,39 @@ fun SettingsScreen(vm: SortViewModel, pad: PaddingValues, onBack: (() -> Unit)? 
             cfg.useMine) { v -> vm.updateSettings { it.copy(useMine = v) } }
         SwitchRow("Use built-in labels", "Fall back to ImageNet labels when no category matches.",
             cfg.useBuiltin) { v -> vm.updateSettings { it.copy(useBuiltin = v) } }
+        Text("Scan mode", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SelChip(selected = cfg.scanMode == "auto", label = "Auto", onClick = { vm.updateSettings { it.copy(scanMode = "auto") } })
+            SelChip(selected = cfg.scanMode == "fast", label = "Fastest", onClick = { vm.updateSettings { it.copy(scanMode = "fast") } })
+            SelChip(selected = cfg.scanMode == "smart", label = "Smart", onClick = { vm.updateSettings { it.copy(scanMode = "smart") } })
+        }
+        Text("OCR mode", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SelChip(selected = cfg.ocrMode == "off", label = "Off", onClick = { vm.updateSettings { it.copy(ocrMode = "off") } })
+            SelChip(selected = cfg.ocrMode == "docs", label = "Docs", onClick = { vm.updateSettings { it.copy(ocrMode = "docs") } })
+            SelChip(selected = cfg.ocrMode == "all", label = "All", onClick = { vm.updateSettings { it.copy(ocrMode = "all") } })
+            SelChip(selected = cfg.ocrMode == "search", label = "Search", onClick = { vm.updateSettings { it.copy(ocrMode = "search") } })
+        }
+        Text("Hindi OCR", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SelChip(selected = cfg.ocrHindi == "auto", label = "Auto", onClick = { vm.updateSettings { it.copy(ocrHindi = "auto") } })
+            SelChip(selected = cfg.ocrHindi == "on", label = "On", onClick = { vm.updateSettings { it.copy(ocrHindi = "on") } })
+            SelChip(selected = cfg.ocrHindi == "off", label = "Off", onClick = { vm.updateSettings { it.copy(ocrHindi = "off") } })
+        }
+        SwitchRow("Tags", "Run ML Kit image labeling and save tags.", cfg.tagsOn) { v -> vm.updateSettings { it.copy(tagsOn = v) } }
+        Text("Search model", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SelChip(selected = cfg.searchModel == "clip", label = "CLIP", onClick = { vm.updateSettings { it.copy(searchModel = "clip") } })
+            SelChip(selected = cfg.searchModel == "mnet", label = "MobileNet", onClick = { vm.updateSettings { it.copy(searchModel = "mnet") } })
+        }
+        SwitchRow("Index while charging", "Build search embeddings only while charging.", cfg.indexWhileCharging) { v -> vm.updateSettings { it.copy(indexWhileCharging = v) } }
+        SwitchRow("Faces", "Detect and match faces.", cfg.facesOn) { v -> vm.updateSettings { it.copy(facesOn = v) } }
+        Text("Background setup guide", style = MaterialTheme.typography.labelLarge)
+        Text("To scan in background: enable Display over other apps and disable battery optimization for this app in Android settings.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Diagnostics", style = MaterialTheme.typography.labelLarge)
+        Text("See Diagnostics tab for stage speed (files/s).",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
