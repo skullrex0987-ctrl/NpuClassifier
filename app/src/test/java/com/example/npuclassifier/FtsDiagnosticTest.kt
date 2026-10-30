@@ -63,6 +63,6 @@ class FtsDiagnosticTest {
         // Also try the query string Repo.ftsSearch builds
         println("DIAG ftsSearch built query: pay*")
         println("DIAG_DONE")
-        throw RuntimeException("DIAG_DUMP: ftsCount=$ftsCount searchResult=$searchResult")
+        org.junit.Assert.fail("DIAG_DUMP: ftsCount=$ftsCount searchResult=$searchResult")
     }
 }
