@@ -33,16 +33,19 @@ import java.io.File
 fun SearchPlaceholder(pad: PaddingValues) {
     val ctx = LocalContext.current
     var query by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<Long>>(emptyList()) }
-    val counts by remember { mutableStateOf(Repo.counts(ctx)) }
-    val indexed = remember { mutableStateOf(Repo.page(ctx, Filter(), 0, 10000).count { it.ocr.isNotBlank() || it.tags.isNotEmpty() }) }
+    var results by remember { mutableStateOf<List<SortItem>>(emptyList()) }
+    val cfg = remember { Prefs(ctx).load() }
+    val (indexed, total) = remember { SearchEngine.indexStatus(ctx, cfg) }
     Column(Modifier.fillMaxSize().padding(pad).padding(16.dp)) {
         Text("Search", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
-        Text("${indexed.value} of ${counts.total} indexed", style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+        Text("$indexed of $total indexed", style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
         OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Query") }, modifier = Modifier.fillMaxWidth())
-        Button(onClick = { results = Repo.ftsSearch(ctx, query, 50) }, modifier = Modifier.padding(top = 8.dp)) { Text("Search") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            Button(onClick = { results = SearchEngine.search(ctx, query, cfg, Filter()) }) { Text("Search") }
+            OutlinedButton(onClick = { /* Build index: would embed all files */ }) { Text("Build index") }
+        }
         LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp)) {
-            items(results) { id -> Text("id=$id") }
+            items(results) { si -> Text(si.media.name + " — " + si.label) }
         }
     }
 }
