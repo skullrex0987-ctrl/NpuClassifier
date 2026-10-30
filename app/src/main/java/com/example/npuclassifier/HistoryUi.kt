@@ -29,8 +29,15 @@ import java.io.File
 
 @Composable
 fun SearchPlaceholder(pad: PaddingValues) {
+    val ctx = LocalContext.current
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<Long>>(emptyList()) }
     Column(Modifier.fillMaxSize().padding(pad).padding(16.dp)) {
-        Text("Search coming soon", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+        OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Search") }, modifier = Modifier.fillMaxWidth())
+        Button(onClick = { results = Repo.ftsSearch(ctx, query, 50) }, modifier = Modifier.padding(top = 8.dp)) { Text("Search") }
+        LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp)) {
+            items(results) { id -> Text("id=$id") }
+        }
     }
 }
 
