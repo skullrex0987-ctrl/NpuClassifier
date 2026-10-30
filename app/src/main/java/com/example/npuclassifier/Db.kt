@@ -7,7 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 object Db {
     fun get(ctx: Context): SQLiteDatabase = Helper(ctx).writableDatabase
 
-    private class Helper(ctx: Context) : SQLiteOpenHelper(ctx, "npusorter.db", null, 1) {
+    private class Helper(ctx: Context) : SQLiteOpenHelper(ctx, "npusorter.db", null, 2) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("""CREATE TABLE media(id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE NOT NULL, path TEXT, uri TEXT NOT NULL, name TEXT NOT NULL,
               is_video INTEGER, size INTEGER, mtime INTEGER, w INTEGER, h INTEGER, status TEXT NOT NULL, label TEXT, extra_labels TEXT,

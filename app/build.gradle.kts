@@ -13,6 +13,9 @@ android {
         versionCode = 3
         versionName = "3.0-phase3"
         ndk { abiFilters += "arm64-v8a" }
+        if (project.hasProperty("ciAbi")) {
+            ndk { abiFilters += "x86_64" }
+        }
     }
     // keep model files uncompressed so they can be memory-mapped
     androidResources { noCompress += "tflite" }
@@ -39,4 +42,11 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-gpu:2.16.1")
     implementation("org.tensorflow:tensorflow-lite-gpu-api:2.16.1")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.12.2")
+    testImplementation("androidx.test:core-ktx:1.5.0")
+    testImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test:runner:1.5.2")
+    androidTestImplementation("androidx.test:rules:1.5.0")
 }
