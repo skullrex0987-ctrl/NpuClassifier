@@ -29,7 +29,7 @@ class FtsDiagnosticTest {
             Repo.saveEnrichment(c, page[0].media.id, "payment upi transaction", emptyList())
         }
         // sqlite version
-        val db = Repo.db(c)
+        val db = Db.get(c)
         println("DIAG sqlite_version: ${db.rawQuery("SELECT sqlite_version()", null).use { it.apply { moveToFirst() }; it.getString(0) }}")
         // compile options
         println("DIAG compile_options: ${db.rawQuery("PRAGMA compile_options", null).use { cur -> val sb = StringBuilder(); while (cur.moveToNext()) sb.append(cur.getString(0)).append(","); sb.toString() }}")
