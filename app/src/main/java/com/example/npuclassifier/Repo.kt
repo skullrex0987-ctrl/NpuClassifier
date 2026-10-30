@@ -119,15 +119,6 @@ object Repo {
                     cv.put("batch_id", batchId)
                     cv.put("scanned_at", System.currentTimeMillis())
                     val id = d.insert("media", null, cv)
-                    // sync fts via compileStatement
-                    val stmt = d.compileStatement("INSERT INTO media_fts(rowid, name, ocr, tags, label) VALUES (?, ?, ?, ?, ?)")
-                    stmt.bindLong(1, id)
-                    stmt.bindString(2, m.name)
-                    stmt.bindNull(3)
-                    stmt.bindNull(4)
-                    stmt.bindNull(5)
-                    stmt.execute()
-                    stmt.close()
                     result.add(m.copy(id = id))
                 }
             }
@@ -144,15 +135,7 @@ object Repo {
         cv.put("ocr", ocr.take(4000))
         cv.put("tags", tags.joinToString(","))
         d.update("media", cv, "id=?", arrayOf(mediaId.toString()))
-        // sync fts
-        d.execSQL("UPDATE media_fts SET ocr=?, tags=? WHERE rowid=?", arrayOf(ocr.take(4000), tags.joinToString(","), mediaId))
-        // if no row, insert
-        val cur = d.rawQuery("SELECT count(*) FROM media_fts WHERE rowid=?", arrayOf(mediaId.toString()))
-        var cnt = 0
-        cur.use { if (it.moveToFirst()) cnt = it.getInt(0) }
-        if (cnt == 0) {
-            d.execSQL("INSERT INTO media_fts(rowid, name, ocr, tags, label) SELECT id, name, ?, ?, label FROM media WHERE id=?", arrayOf(ocr.take(4000), tags.joinToString(","), mediaId))
-        }
+        // FTS synced via trigger
     }
 
     fun saveResults(ctx: Context, results: List<SortItem>) {
