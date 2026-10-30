@@ -304,8 +304,7 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
 
     fun retryFailed() {
         viewModelScope.launch(Dispatchers.IO) {
-            val d = Repo.db(ctx)
-            d.execSQL("UPDATE media SET status='PENDING', note='' WHERE status='ERROR'")
+            Repo.resetErrors(ctx)
             refresh()
             message.value = "Retrying failed files"
         }

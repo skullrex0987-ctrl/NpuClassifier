@@ -425,6 +425,11 @@ object Repo {
         d.update("media", cv, "id=?", arrayOf(id.toString()))
     }
 
+    fun resetErrors(ctx: Context) {
+        val d = get(ctx)
+        d.execSQL("UPDATE media SET status='PENDING', note='' WHERE status='ERROR'")
+    }
+
     fun countMissingEmb(ctx: Context, model: String): Int {
         val col = when (model) {
             "mnet" -> "emb_mnet"
