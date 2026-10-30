@@ -370,11 +370,19 @@ object Repo {
 
     fun ftsSearch(ctx: Context, query: String, limit: Int): List<Long> {
         val d = db(ctx)
-        val q = query.trim().split(Regex("\\s+")).joinToString(" ") { "$it*" }
-        val cur = d.rawQuery("SELECT docid FROM media_fts WHERE media_fts MATCH ? ORDER BY rank LIMIT ?", arrayOf(q, limit.toString()))
-        val out = mutableListOf<Long>()
-        cur.use { while (it.moveToNext()) out.add(it.getLong(0)) }
-        return out
+        val tokens = query.trim().split(Regex("\\s+"))
+            .map { it.replace(Regex("[^A-Za-z0-9]"), "") }
+            .filter { it.isNotBlank() }
+        if (tokens.isEmpty()) return emptyList()
+        val q = tokens.joinToString(" ") { "$it*" }
+        return try {
+            val cur = d.rawQuery("SELECT docid FROM media_fts WHERE media_fts MATCH ? ORDER BY rank LIMIT ?", arrayOf(q, limit.toString()))
+            val out = mutableListOf<Long>()
+            cur.use { while (it.moveToNext()) out.add(it.getLong(0)) }
+            out
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     fun embeddings(ctx: Context, model: String): List<Pair<Long, FloatArray>> {
