@@ -32,7 +32,7 @@ object Decision {
         val starter = StarterRules.match(item.media.name, item.media.path, item.ocr, item.tags, 0, 0, null)
         if (starter != null) {
             val label = starter.label + if (starter.extra.isNotEmpty()) " + ${starter.extra.joinToString(",")}" else ""
-            return item.copy(label = label, status = Status.AUTO, source = "starter")
+            return item.copy(label = label, status = Status.AUTO, source = "starter", extraLabels = starter.extra)
         }
         if (cfg.useBuiltin && item.top.isNotEmpty()) {
             val conf = item.conf
@@ -88,7 +88,7 @@ object Decision {
         val starter = StarterRules.match(item.media.name, item.media.path, item.ocr, item.tags, 0, 0, null)
         if (starter != null) {
             val label = starter.label + if (starter.extra.isNotEmpty()) " + ${starter.extra.joinToString(",")}" else ""
-            return item.copy(label = label, status = Status.AUTO, source = "starter")
+            return item.copy(label = label, status = Status.AUTO, source = "starter", extraLabels = starter.extra)
         }
 
         // c) TEXT RULE: zero-shot using candidates

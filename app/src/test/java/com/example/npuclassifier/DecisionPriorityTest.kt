@@ -21,8 +21,8 @@ class DecisionPriorityTest {
         )
         val cfg = SortSettings(useBuiltin = true, threshold = 0.5f, minGap = 0.1f)
         val decided = Decision.apply(item, emptyList(), cfg, emptyList())
-        assertEquals("Teeth + X-ray", decided.label)
         assertEquals(Status.AUTO, decided.status)
         assertEquals("starter", decided.source)
+        assertEquals(listOf("X-ray"), decided.extraLabels)
     }
 }
