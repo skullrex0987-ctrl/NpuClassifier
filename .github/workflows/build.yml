@@ -6,6 +6,9 @@ on:
     tags: ['phase4-*']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
