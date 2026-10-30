@@ -42,10 +42,11 @@ class FtsSpecialCharsTest {
         )
         Repo.upsertPending(c, items, 6L)
         val page = Repo.page(c, com.example.npuclassifier.Filter(), 0, 10)
+        assertTrue("page empty", page.isNotEmpty())
         if (page.isNotEmpty()) {
             Repo.saveEnrichment(c, page[0].media.id, "payment upi transaction", emptyList())
         }
         val r = Repo.ftsSearch(c, "pay", 10)
-        assertTrue(r.isNotEmpty())
+        assertTrue("search empty, r=$r", r.isNotEmpty())
     }
 }
