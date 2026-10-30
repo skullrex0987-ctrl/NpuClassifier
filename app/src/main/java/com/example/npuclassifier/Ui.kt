@@ -281,7 +281,7 @@ private fun ScanScreen(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 LinearProgressIndicator(progress = { prog.first / prog.second.toFloat() }, modifier = Modifier.fillMaxWidth())
                 Text("${prog.first}/${prog.second}  •  ready to sort $auto  •  needs review $review")
-                Text("Waiting: ${Repo.counts(ctx).pending}", style = MaterialTheme.typography.bodySmall)
+                Text("Waiting: ${Repo.counts(vm.ctx).pending}", style = MaterialTheme.typography.bodySmall)
                 stats.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary) }
             }
         }
@@ -330,6 +330,7 @@ private fun ItemRow(si: SortItem) {
                 }
                 val (txt, color) = when (si.status) {
                     Status.PENDING -> "Waiting" to cs.onSurfaceVariant
+                    Status.RUNNING_FAST, Status.RUNNING_SMART -> "Processing" to cs.onSurfaceVariant
                     Status.AUTO -> "→ ${si.label} · ${pct(si.conf)}" to cs.secondary
                     Status.REVIEW -> "Unsure: ${si.label} · ${pct(si.conf)}" to cs.primary
                     Status.DONE -> "Done ${si.note}" to cs.secondary
