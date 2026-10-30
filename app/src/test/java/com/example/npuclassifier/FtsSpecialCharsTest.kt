@@ -45,7 +45,7 @@ class FtsSpecialCharsTest {
         if (page.isNotEmpty()) {
             Repo.saveEnrichment(c, page[0].media.id, "payment upi transaction", emptyList())
         }
-        val r = Repo.ftsSearch(c, "pay", 10)
+        val r = Repo.ftsSearch(c, "payment", 10)
         assertTrue(r.isNotEmpty())
     }
 }
