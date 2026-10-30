@@ -380,7 +380,7 @@ object Repo {
         if (tokens.isEmpty()) return emptyList()
         val q = tokens.joinToString(" ") { "$it*" }
         return try {
-            val cur = d.rawQuery("SELECT docid FROM media_fts WHERE media_fts MATCH ? ORDER BY rank LIMIT ?", arrayOf(q, limit.toString()))
+            val cur = d.rawQuery("SELECT rowid FROM media_fts WHERE media_fts MATCH ? ORDER BY rank LIMIT ?", arrayOf(q, limit.toString()))
             val out = mutableListOf<Long>()
             cur.use { while (it.moveToNext()) out.add(it.getLong(0)) }
             out
