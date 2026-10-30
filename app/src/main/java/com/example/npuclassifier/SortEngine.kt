@@ -414,7 +414,7 @@ class SortEngine(private val ctx: Context, private val enricher: EnricherApi = E
             for (t in workerThreads) t.join()
             decoderPool.shutdown()
             sink.close()
-            AppLog.i("SortEngine", "Stage fast: $done files in ${(System.currentTimeMillis()-t0)/1000f}s")
+            AppLog.d("SortEngine", "Stage fast: $done files in ${(System.currentTimeMillis()-t0)/1000f}s")
         } else {
             val d = Db.get(ctx)
             d.execSQL("UPDATE media SET status='NEEDS_SMART' WHERE status='PENDING'")
@@ -490,7 +490,7 @@ class SortEngine(private val ctx: Context, private val enricher: EnricherApi = E
             worker.join()
             decoderPool.shutdown()
             sink.close()
-            AppLog.i("SortEngine", "Stage smart: $done files in ${(System.currentTimeMillis()-t0)/1000f}s")
+            AppLog.d("SortEngine", "Stage smart: $done files in ${(System.currentTimeMillis()-t0)/1000f}s")
         } finally {
             smartEmbedder?.close()
         }

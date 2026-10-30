@@ -29,7 +29,7 @@ object Decision {
             }
         }
         // StarterRules (screenshots, dental, X-ray, etc.)
-        val starter = StarterRules.match(item.media.name, item.media.path, item.ocr, item.tags.split(",").filter { it.isNotBlank() }, 0, 0, null)
+        val starter = StarterRules.match(item.media.name, item.media.path, item.ocr, item.tags, 0, 0, null)
         if (starter != null) {
             val label = starter.label + if (starter.extra.isNotEmpty()) " + ${starter.extra.joinToString(",")}" else ""
             return item.copy(label = label, status = Status.AUTO, source = "starter")
@@ -85,7 +85,7 @@ object Decision {
         }
 
         // b) StarterRules (screenshots, dental, X-ray)
-        val starter = StarterRules.match(item.media.name, item.media.path, item.ocr, item.tags.split(",").filter { it.isNotBlank() }, 0, 0, null)
+        val starter = StarterRules.match(item.media.name, item.media.path, item.ocr, item.tags, 0, 0, null)
         if (starter != null) {
             val label = starter.label + if (starter.extra.isNotEmpty()) " + ${starter.extra.joinToString(",")}" else ""
             return item.copy(label = label, status = Status.AUTO, source = "starter")

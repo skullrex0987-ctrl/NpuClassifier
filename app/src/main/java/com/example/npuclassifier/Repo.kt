@@ -132,7 +132,7 @@ object Repo {
     fun saveEnrichment(ctx: Context, mediaId: Long, ocr: String, tags: List<String>) {
         val d = db(ctx)
         val cv = android.content.ContentValues()
-        cv.put("ocr", ocr)
+        cv.put("ocr", ocr.take(4000))
         cv.put("tags", tags.joinToString(","))
         d.update("media", cv, "id=?", arrayOf(mediaId.toString()))
     }
@@ -407,14 +407,6 @@ object Repo {
         val d = db(ctx)
         val cv = android.content.ContentValues()
         cv.put(col, floatArrayToBlob(emb))
-        d.update("media", cv, "id=?", arrayOf(id.toString()))
-    }
-
-    fun saveEnrichment(ctx: Context, id: Long, ocr: String, tags: List<String>) {
-        val d = db(ctx)
-        val cv = android.content.ContentValues()
-        cv.put("ocr", ocr.take(4000))
-        cv.put("tags", tags.joinToString(","))
         d.update("media", cv, "id=?", arrayOf(id.toString()))
     }
 

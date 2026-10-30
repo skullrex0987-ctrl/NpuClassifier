@@ -14,7 +14,7 @@ interface EnricherApi {
 }
 
 object Enricher : EnricherApi {
-    fun run(ctx: Context, m: MediaItem, cfg: SortSettings, wantOcr: Boolean, wantTags: Boolean): Enrichment {
+    override fun run(ctx: Context, m: MediaItem, cfg: SortSettings, wantOcr: Boolean, wantTags: Boolean): Enrichment {
         if (!wantOcr) return Enrichment("", emptyList())
         val bmp = try { decodeBitmap(ctx, m) } catch (e: Exception) { null } ?: return Enrichment("", emptyList())
         val ocr = try { recognize(bmp) } catch (e: Exception) { "" }
