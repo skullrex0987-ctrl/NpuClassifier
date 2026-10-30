@@ -9,7 +9,11 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 
 data class Enrichment(val ocr: String, val tags: List<String>)
 
-object Enricher {
+interface EnricherApi {
+    fun run(ctx: Context, m: MediaItem, cfg: SortSettings, wantOcr: Boolean, wantTags: Boolean): Enrichment
+}
+
+object Enricher : EnricherApi {
     fun run(ctx: Context, m: MediaItem, cfg: SortSettings, wantOcr: Boolean, wantTags: Boolean): Enrichment {
         if (!wantOcr) return Enrichment("", emptyList())
         val bmp = try { decodeBitmap(ctx, m) } catch (e: Exception) { null } ?: return Enrichment("", emptyList())

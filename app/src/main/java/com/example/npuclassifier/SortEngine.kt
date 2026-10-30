@@ -15,7 +15,7 @@ import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 
-class SortEngine(private val ctx: Context) {
+class SortEngine(private val ctx: Context, private val enricher: EnricherApi = Enricher) {
 
     companion object {
         fun decide(conf: Float, gap: Float, cfg: SortSettings): Status =
@@ -356,7 +356,11 @@ class SortEngine(private val ctx: Context) {
                                         if (decided.status == Status.REVIEW) Status.NEEDS_SMART else decided.status
                                     }
                                     val thumbPath: String? = null
-                                    sink.add(decided.copy(status = itemStatus, thumb = thumbPath))
+                                    val wantOcr = cfg.ocrMode != "off"
+                                    val wantTags = cfg.tagsOn
+                                    val enr = if (wantOcr || wantTags) enricher.run(ctx, d.m, cfg, wantOcr, wantTags) else Enrichment("", emptyList())
+                                    if (wantOcr || wantTags) Repo.saveEnrichment(ctx, d.m.id, enr.ocr, enr.tags)
+                                    sink.add(decided.copy(status = itemStatus, thumb = thumbPath, ocr = enr.ocr, tags = enr.tags, extraLabels = (StarterRules.match(d.m.name, d.m.path, enr.ocr, enr.tags, 0, 0, null)?.extra ?: emptyList())))
                                     done++
                                     maybeUpdateState(done, total, stage)
                                 } else if (d.err != null || d.bmp == null) {
@@ -368,16 +372,20 @@ class SortEngine(private val ctx: Context) {
                                     val conf = top[0].second
                                     val gap = conf - (top.getOrNull(1)?.second ?: 0f)
                                     val emb = Emb.fromScores(scores)
-                                    val status = SortEngine.decide(conf, gap, cfg)
-                                    val itemStatus = if (cfg.scanMode == "fast") {
-                                        if (status == Status.REVIEW) Status.REVIEW else status
-                                    } else {
-                                        if (status == Status.REVIEW) Status.NEEDS_SMART else status
-                                    }
                                     val thumbPath = Thumbs.save(ctx, d.m.id, d.bmp)
-                                    sink.add(SortItem(media = d.m, label = SortEngine.prettyLabel(top[0].first), conf = conf, gap = gap, top = top, status = itemStatus, backend = b, emb = emb, thumb = thumbPath))
-                                    done++
-                                    maybeUpdateState(done, total, stage)
+                                    val wantOcr = cfg.ocrMode != "off"
+                                    val wantTags = cfg.tagsOn
+                                    val enr = if (wantOcr || wantTags) enricher.run(ctx, d.m, cfg, wantOcr, wantTags) else Enrichment("", emptyList())
+                                    if (wantOcr || wantTags) Repo.saveEnrichment(ctx, d.m.id, enr.ocr, enr.tags)
+                                    val starter = StarterRules.match(d.m.name, d.m.path, enr.ocr, enr.tags, 0, 0, null)
+                                    val si = SortItem(media = d.m, label = SortEngine.prettyLabel(top[0].first), conf = conf, gap = gap, top = top, status = Status.PENDING, backend = b, emb = emb, thumb = thumbPath, ocr = enr.ocr, tags = enr.tags, extraLabels = starter?.extra ?: emptyList())
+                                    val decided = Decision.apply(si, cats, cfg, emptyList())
+                                    val finalStatus = if (cfg.scanMode == "fast") {
+                                        if (decided.status == Status.REVIEW) Status.REVIEW else decided.status
+                                    } else {
+                                        if (decided.status == Status.REVIEW) Status.NEEDS_SMART else decided.status
+                                    }
+                                    sink.add(decided.copy(status = finalStatus, thumb = thumbPath))
                                 }
                             } catch (e: Exception) {
                                 AppLog.e("SortEngine", "worker $b failed ${d.m.name}", e)
@@ -406,6 +414,7 @@ class SortEngine(private val ctx: Context) {
             for (t in workerThreads) t.join()
             decoderPool.shutdown()
             sink.close()
+            AppLog.i("SortEngine", "Stage fast: $done files in ${(System.currentTimeMillis()-t0)/1000f}s")
         } else {
             val d = Db.get(ctx)
             d.execSQL("UPDATE media SET status='NEEDS_SMART' WHERE status='PENDING'")
@@ -481,6 +490,7 @@ class SortEngine(private val ctx: Context) {
             worker.join()
             decoderPool.shutdown()
             sink.close()
+            AppLog.i("SortEngine", "Stage smart: $done files in ${(System.currentTimeMillis()-t0)/1000f}s")
         } finally {
             smartEmbedder?.close()
         }

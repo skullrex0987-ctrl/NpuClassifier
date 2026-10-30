@@ -28,6 +28,12 @@ object Decision {
                 }
             }
         }
+        // StarterRules (screenshots, dental, X-ray, etc.)
+        val starter = StarterRules.match(item.media.name, item.media.path, item.ocr, item.tags.split(",").filter { it.isNotBlank() }, 0, 0, null)
+        if (starter != null) {
+            val label = starter.label + if (starter.extra.isNotEmpty()) " + ${starter.extra.joinToString(",")}" else ""
+            return item.copy(label = label, status = Status.AUTO, source = "starter")
+        }
         if (cfg.useBuiltin && item.top.isNotEmpty()) {
             val conf = item.conf
             val gap = item.gap
@@ -78,7 +84,14 @@ object Decision {
             }
         }
 
-        // b) TEXT RULE: zero-shot using candidates
+        // b) StarterRules (screenshots, dental, X-ray)
+        val starter = StarterRules.match(item.media.name, item.media.path, item.ocr, item.tags.split(",").filter { it.isNotBlank() }, 0, 0, null)
+        if (starter != null) {
+            val label = starter.label + if (starter.extra.isNotEmpty()) " + ${starter.extra.joinToString(",")}" else ""
+            return item.copy(label = label, status = Status.AUTO, source = "starter")
+        }
+
+        // c) TEXT RULE: zero-shot using candidates
         val filteredCands = cands.filter { c ->
             (c.source == "mine" && cfg.useMine) || (c.source == "builtin" && cfg.useBuiltin)
         }

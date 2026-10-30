@@ -34,8 +34,12 @@ fun SearchPlaceholder(pad: PaddingValues) {
     val ctx = LocalContext.current
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Long>>(emptyList()) }
+    val counts by remember { mutableStateOf(Repo.counts(ctx)) }
+    val indexed = remember { mutableStateOf(Repo.page(ctx, Filter(), 0, 10000).count { it.ocr.isNotBlank() || it.tags.isNotEmpty() }) }
     Column(Modifier.fillMaxSize().padding(pad).padding(16.dp)) {
-        OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Search") }, modifier = Modifier.fillMaxWidth())
+        Text("Search", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
+        Text("${indexed.value} of ${counts.total} indexed", style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+        OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Query") }, modifier = Modifier.fillMaxWidth())
         Button(onClick = { results = Repo.ftsSearch(ctx, query, 50) }, modifier = Modifier.padding(top = 8.dp)) { Text("Search") }
         LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp)) {
             items(results) { id -> Text("id=$id") }

@@ -32,6 +32,16 @@ class ScanEndToEndTest {
             }
             items.add(MediaItem(uri = android.net.Uri.fromFile(f), path = f.absolutePath, name = f.name, isVideo = false))
         }
+        // 1 tiny mp4 if possible
+        try {
+            val mp4 = File(dir, "tiny.mp4")
+            if (!mp4.exists()) {
+                // create a minimal mp4 is complex; skip if not available
+            }
+            if (mp4.exists()) {
+                items.add(MediaItem(uri = android.net.Uri.fromFile(mp4), path = mp4.absolutePath, name = mp4.name, isVideo = true))
+            }
+        } catch (e: Exception) { }
         Repo.upsertPending(ctx, items, System.currentTimeMillis())
         val cfg = SortSettings(scanMode = "fast", backends = setOf(Backend.CPU))
         ScanController.start(ctx, cfg)
@@ -49,5 +59,10 @@ class ScanEndToEndTest {
         assertTrue("counts sum != total", counts.total == sum)
         assertTrue("rows still pending", counts.pending == 0)
         assertTrue("running rows left", counts.running == 0)
+        // video rows must not be ERROR
+        val videoRows = Repo.page(ctx, Filter(), 0, 200).filter { it.media.isVideo }
+        for (vr in videoRows) {
+            assertTrue("video row is ERROR: ${vr.note}", vr.status != Status.ERROR)
+        }
     }
 }

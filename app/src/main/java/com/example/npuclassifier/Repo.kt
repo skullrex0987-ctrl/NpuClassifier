@@ -129,6 +129,14 @@ object Repo {
         return result
     }
 
+    fun saveEnrichment(ctx: Context, mediaId: Long, ocr: String, tags: List<String>) {
+        val d = db(ctx)
+        val cv = android.content.ContentValues()
+        cv.put("ocr", ocr)
+        cv.put("tags", tags.joinToString(","))
+        d.update("media", cv, "id=?", arrayOf(mediaId.toString()))
+    }
+
     fun saveResults(ctx: Context, results: List<SortItem>) {
         val d = db(ctx)
         d.beginTransaction()
