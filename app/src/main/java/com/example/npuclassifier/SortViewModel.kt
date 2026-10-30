@@ -305,7 +305,6 @@ class SortViewModel(app: Application) : AndroidViewModel(app) {
     fun retryFailed() {
         viewModelScope.launch(Dispatchers.IO) {
             Repo.resetErrors(ctx)
-            refresh()
             message.value = "Retrying failed files"
         }
     }

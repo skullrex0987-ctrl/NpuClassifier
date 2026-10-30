@@ -426,7 +426,7 @@ object Repo {
     }
 
     fun resetErrors(ctx: Context) {
-        val d = get(ctx)
+        val d = Db.get(ctx)
         d.execSQL("UPDATE media SET status='PENDING', note='' WHERE status='ERROR'")
     }
 
