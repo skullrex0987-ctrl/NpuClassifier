@@ -138,7 +138,14 @@ object Repo {
         cv.put("tags", tags.joinToString(","))
         d.update("media", cv, "id=?", arrayOf(mediaId.toString()))
         // sync fts
-        d.execSQL("INSERT OR REPLACE INTO media_fts(rowid, name, ocr, tags, label) SELECT id, name, ?, ?, label FROM media WHERE id=?", arrayOf(ocr.take(4000), tags.joinToString(","), mediaId))
+        d.execSQL("UPDATE media_fts SET ocr=?, tags=? WHERE rowid=?", arrayOf(ocr.take(4000), tags.joinToString(","), mediaId))
+        // if no row, insert
+        val cur = d.rawQuery("SELECT count(*) FROM media_fts WHERE rowid=?", arrayOf(mediaId.toString()))
+        var cnt = 0
+        cur.use { if (it.moveToFirst()) cnt = it.getInt(0) }
+        if (cnt == 0) {
+            d.execSQL("INSERT INTO media_fts(rowid, name, ocr, tags, label) SELECT id, name, ?, ?, label FROM media WHERE id=?", arrayOf(ocr.take(4000), tags.joinToString(","), mediaId))
+        }
     }
 
     fun saveResults(ctx: Context, results: List<SortItem>) {
@@ -383,6 +390,12 @@ object Repo {
             val cur = d.rawQuery("SELECT rowid FROM media_fts WHERE media_fts MATCH ? ORDER BY rank LIMIT ?", arrayOf(q, limit.toString()))
             val out = mutableListOf<Long>()
             cur.use { while (it.moveToNext()) out.add(it.getLong(0)) }
+            if (out.isEmpty()) {
+                // fallback LIKE
+                val like = "%${tokens[0]}%"
+                val cur2 = d.rawQuery("SELECT id FROM media WHERE ocr LIKE ?", arrayOf(like))
+                cur2.use { while (it.moveToNext()) out.add(it.getLong(0)) }
+            }
             out
         } catch (e: Exception) {
             emptyList()
