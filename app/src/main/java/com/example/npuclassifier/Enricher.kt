@@ -7,6 +7,8 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 
+data class Enrichment(val ocr: String, val tags: List<String>)
+
 object Enricher {
     fun run(ctx: Context, m: MediaItem, cfg: SortSettings, wantOcr: Boolean, wantTags: Boolean): Enrichment {
         if (!wantOcr) return Enrichment("", emptyList())
@@ -19,8 +21,7 @@ object Enricher {
     private fun decodeBitmap(ctx: Context, m: MediaItem): Bitmap? {
         return if (m.isVideo) null else {
             try {
-                val src = if (m.path != null) android.graphics.BitmapFactory.decodeFile(m.path) else null
-                src
+                if (m.path != null) android.graphics.BitmapFactory.decodeFile(m.path) else null
             } catch (e: Exception) { null }
         }
     }
