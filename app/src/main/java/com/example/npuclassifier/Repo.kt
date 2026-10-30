@@ -119,6 +119,8 @@ object Repo {
                     cv.put("batch_id", batchId)
                     cv.put("scanned_at", System.currentTimeMillis())
                     val id = d.insert("media", null, cv)
+                    // sync fts
+                    d.execSQL("INSERT INTO media_fts(rowid, name, ocr, tags, label) VALUES (?, ?, ?, ?, ?)", arrayOf(id, m.name, null, null, null))
                     result.add(m.copy(id = id))
                 }
             }
@@ -135,6 +137,8 @@ object Repo {
         cv.put("ocr", ocr.take(4000))
         cv.put("tags", tags.joinToString(","))
         d.update("media", cv, "id=?", arrayOf(mediaId.toString()))
+        // sync fts
+        d.execSQL("INSERT OR REPLACE INTO media_fts(rowid, name, ocr, tags, label) SELECT id, name, ?, ?, label FROM media WHERE id=?", arrayOf(ocr.take(4000), tags.joinToString(","), mediaId))
     }
 
     fun saveResults(ctx: Context, results: List<SortItem>) {

@@ -63,10 +63,10 @@ object Decision {
     }
 
     private fun applyClip(item: SortItem, cats: List<Category>, cfg: SortSettings, cands: List<Candidate>): SortItem {
-        val emb = item.emb ?: return item.copy(status = Status.REVIEW, source = "")
+        val emb = item.emb
 
         // a) Use my categories (taught examples with clip embeddings)
-        if (cfg.useMine) {
+        if (emb != null && cfg.useMine) {
             val catsWithExamples = cats.filter { it.examples.isNotEmpty() }
             if (catsWithExamples.isNotEmpty()) {
                 val matches = matchCategoriesClip(emb, catsWithExamples)
@@ -90,6 +90,8 @@ object Decision {
             val label = starter.label + if (starter.extra.isNotEmpty()) " + ${starter.extra.joinToString(",")}" else ""
             return item.copy(label = label, status = Status.AUTO, source = "starter", extraLabels = starter.extra)
         }
+
+        if (emb == null) return item.copy(status = Status.REVIEW, source = "")
 
         // c) TEXT RULE: zero-shot using candidates
         val filteredCands = cands.filter { c ->
