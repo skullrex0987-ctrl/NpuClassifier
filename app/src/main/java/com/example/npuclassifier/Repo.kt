@@ -167,6 +167,39 @@ object Repo {
         }
     }
 
+    fun claim(ctx: Context, status: Status, limit: Int): List<MediaItem> {
+        val d = db(ctx)
+        val targetRunning = if (status == Status.PENDING) "RUNNING_FAST" else "RUNNING_SMART"
+        val out = mutableListOf<MediaItem>()
+        d.beginTransaction()
+        try {
+            val cur = d.rawQuery("SELECT * FROM media WHERE status=? LIMIT ?", arrayOf(status.name, limit.toString()))
+            val ids = mutableListOf<Long>()
+            cur.use { while (it.moveToNext()) { ids.add(it.getLong(it.getColumnIndexOrThrow("id"))) ; out.add(cursorToMediaItem(it)) } }
+            for (id in ids) {
+                val cv = android.content.ContentValues()
+                cv.put("status", targetRunning)
+                d.update("media", cv, "id=?", arrayOf(id.toString()))
+            }
+            d.setTransactionSuccessful()
+        } finally {
+            d.endTransaction()
+        }
+        // update the returned items' status is not needed (MediaItem has no status)
+        return out
+    }
+
+    fun releaseRunning(ctx: Context) {
+        val d = db(ctx)
+        d.beginTransaction()
+        try {
+            d.execSQL("UPDATE media SET status='PENDING' WHERE status='RUNNING_FAST'")
+            d.execSQL("UPDATE media SET status='NEEDS_SMART' WHERE status='RUNNING_SMART'")
+            d.setTransactionSuccessful()
+        } finally {
+            d.endTransaction()
+        }
+    }
     fun nextPending(ctx: Context, status: Status, limit: Int): List<MediaItem> {
         val d = db(ctx)
         val cur = d.rawQuery("SELECT * FROM media WHERE status=? LIMIT ?", arrayOf(status.name, limit.toString()))
@@ -179,7 +212,7 @@ object Repo {
         val d = db(ctx)
         val cur = d.rawQuery("SELECT status, COUNT(*) FROM media GROUP BY status", null)
         var total = 0
-        var pending = 0; var needsSmart = 0; var auto = 0; var review = 0; var done = 0; var error = 0
+        var pending = 0; var needsSmart = 0; var running = 0; var auto = 0; var review = 0; var done = 0; var error = 0
         cur.use {
             while (it.moveToNext()) {
                 val s = it.getString(0)
@@ -188,6 +221,7 @@ object Repo {
                 when (s) {
                     "PENDING" -> pending = n
                     "NEEDS_SMART" -> needsSmart = n
+                    "RUNNING_FAST", "RUNNING_SMART" -> running += n
                     "AUTO" -> auto = n
                     "REVIEW" -> review = n
                     "DONE" -> done = n
@@ -195,7 +229,7 @@ object Repo {
                 }
             }
         }
-        return Counts(total, pending, needsSmart, auto, review, done, error)
+        return Counts(total, pending, needsSmart, running, auto, review, done, error)
     }
 
     fun page(ctx: Context, f: Filter, offset: Int, limit: Int): List<SortItem> {
@@ -205,6 +239,9 @@ object Repo {
         if (f.statuses.isNotEmpty()) {
             where.add("status IN (${f.statuses.joinToString(",") { "?" }})")
             f.statuses.forEach { args.add(it.name) }
+        }
+        if (f.processedOnly) {
+            where.add("status IN ('AUTO','REVIEW','DONE','ERROR')")
         }
         if (f.label != null) {
             where.add("label=?")

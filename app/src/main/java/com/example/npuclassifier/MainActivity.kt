@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Repo.releaseRunning(this)
         setContent {
             AppTheme {
                 App(

@@ -6,7 +6,7 @@ enum class Backend { CPU, GPU, NPU }
 
 data class MediaItem(val id: Long = 0, val uri: Uri, val path: String?, val name: String, val isVideo: Boolean)
 
-enum class Status { PENDING, NEEDS_SMART, AUTO, REVIEW, DONE, ERROR, MISSING }
+enum class Status { PENDING, NEEDS_SMART, RUNNING_FAST, RUNNING_SMART, AUTO, REVIEW, DONE, ERROR, MISSING }
 
 data class SortItem(
     val id: Long = 0,
@@ -63,8 +63,8 @@ data class Category(val name: String, val examples: List<Example>, val prompt: S
 
 data class Candidate(val name: String, val source: String, val textEmb: FloatArray)
 
-data class Counts(val total: Int, val pending: Int, val needsSmart: Int, val auto: Int, val review: Int, val done: Int, val error: Int)
+data class Counts(val total: Int, val pending: Int, val needsSmart: Int, val running: Int, val auto: Int, val review: Int, val done: Int, val error: Int)
 
-data class Filter(val statuses: Set<Status> = emptySet(), val label: String? = null, val latestFirst: Boolean = true)
+data class Filter(val statuses: Set<Status> = emptySet(), val label: String? = null, val latestFirst: Boolean = true, val processedOnly: Boolean = false)
 
 data class HistoryRow(val id: Long, val batchId: Long, val ts: Long, val srcPath: String?, val destPath: String, val action: String, val label: String, val conf: Float, val source: String, val thumb: String?, val ocrSnippet: String, val tags: String, val status: String)

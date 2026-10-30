@@ -24,9 +24,13 @@ class ScanService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            ScanController.stopRequested = true
+            Repo.releaseRunning(applicationContext)
             stopSelf()
             return START_NOT_STICKY
         }
+        ScanController.stopRequested = false
+        Repo.releaseRunning(applicationContext) // resume from crashed state
         val cfg = ScanController.currentCfg
         startForeground(NOTIF_ID, buildNotification("Starting...", 0, 0))
         running = true

@@ -11,7 +11,11 @@ object ScanController {
     private val _state = MutableStateFlow(ScanState())
     val state: StateFlow<ScanState> = _state
     var currentCfg: SortSettings = SortSettings()
+    @Volatile
+    var stopRequested: Boolean = false
+
     fun start(ctx: Context, cfg: SortSettings) {
+        stopRequested = false
         currentCfg = cfg
         ScanService.ensureChannel(ctx)
         val i = Intent(ctx, ScanService::class.java)
@@ -23,6 +27,8 @@ object ScanController {
         _state.value = ScanState(running = true, stage = "fast", message = "Starting...")
     }
     fun stop(ctx: Context) {
+        stopRequested = true
+        Repo.releaseRunning(ctx)
         ctx.stopService(Intent(ctx, ScanService::class.java))
         _state.value = ScanState(running = false, stage = "idle", message = "Stopped")
     }

@@ -107,7 +107,7 @@ fun App(
     val ctx = vm.ctx
     LaunchedEffect(Unit) {
         while (true) {
-            vm.items.value = Repo.page(ctx, Filter(), 0, 50)
+            vm.items.value = Repo.page(ctx, Filter(processedOnly = true), 0, 50)
             kotlinx.coroutines.delay(1000)
         }
     }
@@ -281,6 +281,7 @@ private fun ScanScreen(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 LinearProgressIndicator(progress = { prog.first / prog.second.toFloat() }, modifier = Modifier.fillMaxWidth())
                 Text("${prog.first}/${prog.second}  •  ready to sort $auto  •  needs review $review")
+                Text("Waiting: ${Repo.counts(ctx).pending}", style = MaterialTheme.typography.bodySmall)
                 stats.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary) }
             }
         }
