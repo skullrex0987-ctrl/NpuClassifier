@@ -294,6 +294,7 @@ private fun ScanScreen(
                     Text(if (cfg.move) "Move $auto" else "Copy $auto")
                 }
                 TextButton(onClick = { vm.undo() }, enabled = canUndo) { Text("Undo") }
+                TextButton(onClick = { vm.retryFailed() }, enabled = list.any { it.status == Status.ERROR } && !running) { Text("Retry failed") }
             }
         }
         item {
@@ -548,6 +549,12 @@ fun SettingsScreen(vm: SortViewModel, pad: PaddingValues, onBack: (() -> Unit)? 
             SelChip(selected = cfg.searchModel == "mnet", label = "MobileNet", onClick = { vm.updateSettings { it.copy(searchModel = "mnet") } })
         }
         SwitchRow("Index while charging", "Build search embeddings only while charging.", cfg.indexWhileCharging) { v -> vm.updateSettings { it.copy(indexWhileCharging = v) } }
+        Text("Auto-apply after scan", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SelChip(selected = cfg.autoApply == "off", label = "Off", onClick = { vm.updateSettings { it.copy(autoApply = "off") } })
+            SelChip(selected = cfg.autoApply == "ask", label = "Ask", onClick = { vm.updateSettings { it.copy(autoApply = "ask") } })
+            SelChip(selected = cfg.autoApply == "on", label = "On", onClick = { vm.updateSettings { it.copy(autoApply = "on") } })
+        }
         SwitchRow("Faces", "Detect and match faces.", cfg.facesOn) { v -> vm.updateSettings { it.copy(facesOn = v) } }
         Text("Background setup guide", style = MaterialTheme.typography.labelLarge)
         Text("To scan in background: enable Display over other apps and disable battery optimization for this app in Android settings.",

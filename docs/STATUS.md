@@ -1,23 +1,26 @@
-# CP2 STATUS — 2026-10-30 (GREEN)
+# CP2 STATUS — 2026-10-30 (GREEN, phone bugs reported)
 
-## Green (CI 41071934439 — ALL PASS)
-- unit-tests: 27 passed (DecisionPriority, PrefsRoundTrip, StarterRules, ScreenshotTyper, ProgressMath, RepoClaim, RepoCounts, RrfMerge, FileOpsTest, EnricherInjectableTest, etc.)
-- emulator-tests: StopTest, ScanEndToEndTest, NoDuplicateProcessingTest, OcrEmulatorTest, FtsSpecialCharsTest (real Android SQLite)
+## Green (CI 41073262038 — ALL PASS)
+- unit-tests: 29 passed
+- emulator-tests: StopTest, ScanEndToEndTest, NoDuplicateProcessingTest, OcrEmulatorTest, FtsSpecialCharsTest
 - build: APK built successfully
 
 ## Done this session
-- (a) Pipeline hooks: SortEngine calls Enricher by cfg.ocrMode/tagsOn, saves via Repo.saveEnrichment ✅
-- (b) Settings UI: all new fields added (scan mode, OCR mode, Hindi, tags, search model, index while charging, faces, background guide, diagnostics) ✅ + Prefs round-trip test ✅
-- (c) Semantic search: SearchEngine (FTS + cosine + RRF), SearchPlaceholder with N of M indexed + Build index ✅
-- (d) FileOps multi-folder copy test ✅ + fake-Enricher injectable test ✅
-- (e) Diagnostics speed lines: AppLog.d stage lines in SortEngine ✅
+- (a) Pipeline hooks ✅
+- (b) Settings UI ✅ + Prefs round-trip ✅
+- (c) Semantic search ✅
+- (d) FileOps multi-folder test ✅ + fake-Enricher test ✅
+- (e) Diagnostics speed lines ✅
+
+## Phone bugs (3) — IN PROGRESS
+### Bug 1: Bitmap crop crash
+- Need: safeCenterCrop helper, AppLog full stack trace, thumbnail failure != file ERROR, Retry button
+### Bug 2: Copies everything it processes
+- Need: Auto-apply Off/Ask/On (default Off), Apply only AUTO, skip DONE/existing, exclude Sorted folder
+### Bug 3: Progress sometimes shows, sometimes not
+- Need: read from ScanController.state, Repo.counts polling while visible, progress card never disappears, notification determinate bar, Compose UI test
 
 ## Releases
 - phase4-cp1d: verified
 - phase4-cp2: INCOMPLETE - do not test
-- phase4-cp2b: CI GREEN — published with APK
-
-## Remaining (phone test needed)
-- Diagnostics speed lines verified on device
-- OCR on device
-- Semantic search on device (needs CLIP model)
+- phase4-cp2e: CI GREEN — published with APK

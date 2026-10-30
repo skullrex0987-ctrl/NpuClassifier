@@ -43,9 +43,8 @@ class ClipEmbedder(ctx: Context, val backend: Backend) : Embedder {
         val newW = (w * scale).toInt()
         val newH = (h * scale).toInt()
         val scaled = Bitmap.createScaledBitmap(bmp, newW, newH, true)
-        val cropX = (newW - 224) / 2
-        val cropY = (newH - 224) / 2
-        val cropped = Bitmap.createBitmap(scaled, cropX, cropY, 224, 224)
+        val cropped = SafeCrop.safeCenterCrop(scaled, 224)
+        if (scaled !== bmp && scaled !== cropped) scaled.recycle()
 
         val mean = floatArrayOf(0.48145466f, 0.4578275f, 0.40821073f)
         val std = floatArrayOf(0.26862954f, 0.26130258f, 0.27577711f)

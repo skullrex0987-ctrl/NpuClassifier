@@ -33,7 +33,8 @@ class Prefs(ctx: Context) {
             searchModel = p.getString("searchModel", d.searchModel) ?: d.searchModel,
             facesOn = p.getBoolean("facesOn", d.facesOn),
             faceMatch = p.getFloat("faceMatch", d.faceMatch),
-            indexWhileCharging = p.getBoolean("indexWhileCharging", d.indexWhileCharging)
+            indexWhileCharging = p.getBoolean("indexWhileCharging", d.indexWhileCharging),
+            autoApply = p.getString("autoApply", d.autoApply) ?: d.autoApply
         )
     }
 
@@ -61,6 +62,7 @@ class Prefs(ctx: Context) {
             .putBoolean("facesOn", s.facesOn)
             .putFloat("faceMatch", s.faceMatch)
             .putBoolean("indexWhileCharging", s.indexWhileCharging)
+            .putString("autoApply", s.autoApply)
             .apply()
     }
 }

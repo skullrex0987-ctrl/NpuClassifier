@@ -288,6 +288,7 @@ class SortEngine(private val ctx: Context, private val enricher: EnricherApi = E
         if (cfg.scanMode != "smart") {
             val stage = "Fast pass"
             var total = Repo.counts(ctx).pending.coerceAtLeast(1)
+            ScanController.update(ScanState(running = true, stage = stage, done = 0, total = total, perSec = 0f, message = "$stage 0/$total"))
             var done = 0
             val sink = ResultSink(ctx)
             data class Decoded(val m: MediaItem, val bmp: Bitmap?, val err: String?)
@@ -427,6 +428,7 @@ class SortEngine(private val ctx: Context, private val enricher: EnricherApi = E
         }
         try {
             val total = Repo.counts(ctx).needsSmart.coerceAtLeast(1)
+            ScanController.update(ScanState(running = true, stage = "Smart pass", done = 0, total = total, perSec = 0f, message = "Smart pass 0/$total"))
             var done = 0
             val sink = ResultSink(ctx)
             data class Decoded2(val m: MediaItem, val bmp: Bitmap?, val err: String?)

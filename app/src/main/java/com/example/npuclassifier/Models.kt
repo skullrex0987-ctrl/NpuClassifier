@@ -51,7 +51,8 @@ data class SortSettings(
     val searchModel: String = "clip",
     val facesOn: Boolean = false,
     val faceMatch: Float = 0.65f,
-    val indexWhileCharging: Boolean = true
+    val indexWhileCharging: Boolean = true,
+    val autoApply: String = "off"  // off / ask / on
 )
 
 /** One file operation, kept so a batch can be undone. */

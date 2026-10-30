@@ -30,6 +30,12 @@ object FileOps {
             val root = File(cfg.destRoot)
             val dir = File(if (m.isVideo) File(root, "Videos") else root, safeName(f))
             if (!dir.exists() && !dir.mkdirs()) throw IOException("Cannot create ${dir.path}")
+            // Skip if destination already exists with same name and size
+            val existingDest = File(dir, m.name)
+            if (existingDest.exists() && m.path != null && File(m.path).length() == existingDest.length()) {
+                ops.add(Op(m.path, existingDest.path, false))
+                continue
+            }
             val dest = unique(dir, m.name)
             var moved = false
             if (m.path != null) {
