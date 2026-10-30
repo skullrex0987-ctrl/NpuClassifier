@@ -62,6 +62,7 @@ class FtsDiagnosticTest {
         println("DIAG Repo.ftsSearch('pay') -> $searchResult")
         // Also try the query string Repo.ftsSearch builds
         println("DIAG ftsSearch built query: pay*")
-        assertTrue(true)
+        println("DIAG_DONE")
+        throw RuntimeException("DIAG_DUMP: ftsCount=$ftsCount searchResult=$searchResult")
     }
 }
