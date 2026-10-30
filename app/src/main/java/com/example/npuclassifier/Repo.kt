@@ -119,8 +119,15 @@ object Repo {
                     cv.put("batch_id", batchId)
                     cv.put("scanned_at", System.currentTimeMillis())
                     val id = d.insert("media", null, cv)
-                    // sync fts
-                    d.execSQL("INSERT INTO media_fts(rowid, name, ocr, tags, label) VALUES (?, ?, ?, ?, ?)", arrayOf(id, m.name, null, null, null))
+                    // sync fts via compileStatement
+                    val stmt = d.compileStatement("INSERT INTO media_fts(rowid, name, ocr, tags, label) VALUES (?, ?, ?, ?, ?)")
+                    stmt.bindLong(1, id)
+                    stmt.bindString(2, m.name)
+                    stmt.bindNull(3)
+                    stmt.bindNull(4)
+                    stmt.bindNull(5)
+                    stmt.execute()
+                    stmt.close()
                     result.add(m.copy(id = id))
                 }
             }
